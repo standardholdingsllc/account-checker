@@ -23,11 +23,15 @@ export class SlackService {
     let result = accountsToShow.map((account, index) => {
       const balanceStr = this.formatCurrency(account.balance);
       const createdStr = format(account.accountCreated, 'MMM dd, yyyy');
+      const lastActivityStr = account.lastActivity 
+        ? format(account.lastActivity, 'MMM dd, yyyy')
+        : 'Never';
       
       return `${index + 1}. *${account.customerName}* (ID: ${account.accountId})\n` +
              `   💰 Balance: ${balanceStr}\n` +
              `   📅 Created: ${createdStr}\n` +
-             `   ⏰ Age: ${account.daysSinceCreation} days old`;
+             `   📅 Last Activity: ${lastActivityStr}\n` +
+             `   ⏰ Days Since Activity: ${account.hasActivity ? account.daysSinceLastActivity : account.daysSinceCreation} days`;
     }).join('\n\n');
     
     if (remainingCount > 0) {
@@ -85,16 +89,19 @@ export class SlackService {
     const sortedAccounts = accounts.sort((a, b) => b.balance - a.balance);
     
     // Calculate statistics
-    const avgAge = accounts.reduce((sum, acc) => sum + acc.daysSinceCreation, 0) / accounts.length;
-    const oldestAccount = Math.max(...accounts.map(acc => acc.daysSinceCreation));
+    const activeAccounts = accounts.filter(acc => acc.hasActivity);
+    const inactiveAccounts = accounts.filter(acc => !acc.hasActivity);
     const maxAccountsToShow = accounts.length > 20 ? 5 : 10; // Show fewer if too many
 
-    let alertText = `*${accounts.length}* accounts are ready for closure.\n`;
-    alertText += `*Total Balance:* ${this.formatCurrency(totalBalance)}\n`;
-    alertText += `*Average Age:* ${Math.round(avgAge)} days\n`;
-    alertText += `*Oldest Account:* ${oldestAccount} days\n\n`;
-    alertText += `*All accounts are 120+ days old* (simplified detection - transaction data unavailable due to API permissions)\n`;
-    alertText += `⚠️ *Note:* Using conservative approach based on account creation date only.`;
+    let alertText = `*${accounts.length}* accounts are ready for closure.\n*Total Balance:* ${this.formatCurrency(totalBalance)}\n\n`;
+    
+    if (activeAccounts.length > 0) {
+      alertText += `*${activeAccounts.length}* accounts with previous activity (12+ months dormant)\n`;
+    }
+    
+    if (inactiveAccounts.length > 0) {
+      alertText += `*${inactiveAccounts.length}* accounts with no activity (120+ days old)\n`;
+    }
 
     return {
       text: "⚠️ Account Closure Alert - Final Notice Required",

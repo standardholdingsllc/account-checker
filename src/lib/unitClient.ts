@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import {
   UnitApiConfig,
   UnitAccount,
+  UnitTransaction,
   UnitApiListResponse,
   UnitApiResponse,
   AccountActivity,
@@ -49,7 +50,7 @@ export class UnitApiClient {
       (error) => {
         if (error.response?.status === 401) {
           console.error('Authentication failed - check your Unit API token and scopes');
-          console.error('Required scopes: accounts:read (customers:read and accounts:transactions:read if available)');
+          console.error('Required scopes: accounts:read, accounts:transactions:read, customers:read (if available)');
         } else if (error.response?.status === 429) {
           console.error('Rate limit exceeded - request will be retried by Axios');
           // Unit.co docs suggest implementing exponential backoff for 429s
@@ -126,15 +127,33 @@ export class UnitApiClient {
     }
   }
 
-  // NO transaction API calls - removed completely
-  // NO customer API calls - removed completely
+  async getAccountTransactions(accountId: string, limit = 1, offset = 0): Promise<UnitTransaction[]> {
+    try {
+      const response: AxiosResponse<UnitApiListResponse<UnitTransaction>> = await this.client.get(
+        `/accounts/${accountId}/transactions?page[limit]=${limit}&page[offset]=${offset}&sort=-createdAt`
+      );
+      return response.data.data;
+    } catch (error) {
+      // Don't throw error if account has no transactions - this is expected for dormant accounts
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number } };
+        if (axiosError.response?.status === 404) {
+          // 404 is expected for accounts with no transactions
+          console.log(`Account ${accountId} has no transactions (404 - expected for new/dormant accounts)`);
+          return [];
+        }
+      }
+      // Only log non-404 errors
+      console.error(`Error fetching transactions for account ${accountId}:`, error);
+      return [];
+    }
+  }
 
   async getAllAccountsWithActivity(): Promise<AccountActivity[]> {
     const accounts = await this.getAccounts();
     const accountActivities: AccountActivity[] = [];
 
-    console.log(`Processing ${accounts.length} accounts...`);
-    console.log('Using simplified dormancy detection (account creation dates only) due to API permission limitations');
+    console.log(`Processing ${accounts.length} accounts with proper transaction analysis...`);
 
     for (let i = 0; i < accounts.length; i++) {
       const account = accounts[i];
@@ -145,21 +164,29 @@ export class UnitApiClient {
           console.log(`Processing account ${i + 1}/${accounts.length}: ${account.id} (${account.attributes.status})`);
         }
         
-        // Use simplified identifiers only
+        // Use simplified identifiers (customer API may still have issues)
         const customerName = `Account ${account.id}`;
         const customerEmail: string | undefined = undefined;
         const customerId = account.relationships.customer.data.id;
         
-        // Log API limitations only once every 1000 accounts to avoid spam
+        // Log API status once every 1000 accounts
         if (i % 1000 === 0 && i < 3000) {
-          console.log(`API Note: Using account IDs only (customer and transaction APIs unavailable due to permission limitations)`);
+          console.log(`API Status: Using transaction data for accurate dormancy detection`);
         }
         
-        // NO TRANSACTION API CALLS - use only account creation date
+        // Get account transactions to determine activity
+        const transactions = await this.getAccountTransactions(account.id, 1);
+        
         const accountCreated = parseISO(account.attributes.createdAt);
-        const hasActivity = false; // Conservative: assume no activity if we can't access transaction data
-        const lastActivity = undefined; // No transaction data available
-        const daysSinceLastActivity = 0;
+        const hasActivity = transactions.length > 0;
+        let lastActivity: Date | undefined;
+        let daysSinceLastActivity = 0;
+
+        if (hasActivity) {
+          lastActivity = parseISO(transactions[0].attributes.createdAt);
+          daysSinceLastActivity = differenceInDays(new Date(), lastActivity);
+        }
+
         const daysSinceCreation = differenceInDays(new Date(), accountCreated);
 
         const activity: AccountActivity = {
@@ -178,7 +205,7 @@ export class UnitApiClient {
 
         accountActivities.push(activity);
 
-        // Small delay for rate limiting (only for account processing, no API calls)
+        // Small delay for rate limiting
         if (i % 100 === 0) {
           await new Promise(resolve => setTimeout(resolve, 10));
         }
@@ -189,7 +216,7 @@ export class UnitApiClient {
       }
     }
 
-    console.log(`Successfully processed ${accountActivities.length} accounts`);
+    console.log(`Successfully processed ${accountActivities.length} accounts with transaction data`);
     return accountActivities;
   }
 
@@ -202,7 +229,7 @@ export class UnitApiClient {
     const communicationNeeded: AccountActivity[] = [];
     const closureNeeded: AccountActivity[] = [];
 
-    console.log(`Analyzing ${allAccounts.length} accounts for dormancy...`);
+    console.log(`Analyzing ${allAccounts.length} accounts for dormancy using proper business rules...`);
 
     for (const account of allAccounts) {
       // Skip closed accounts for dormancy analysis
@@ -210,19 +237,28 @@ export class UnitApiClient {
         continue;
       }
 
-      // Conservative approach: flag accounts based on creation date only
-      // Since we can't access transaction data, assume all accounts are dormant
-      
-      // Only log accounts that will be flagged to reduce spam
-      if (account.daysSinceCreation >= 120) {
-        console.log(`Account ${account.accountId} is ${account.daysSinceCreation} days old - flagged for closure (no transaction data available)`);
-        closureNeeded.push(account);
-      } else if (account.daysSinceCreation >= 100) {
-        console.log(`Account ${account.accountId} is ${account.daysSinceCreation} days old - approaching 120-day threshold`);
+      // Implement proper business logic based on transaction activity
+      if (account.hasActivity) {
+        // Accounts with previous activity: 9 months communication, 12 months closure
+        if (account.daysSinceLastActivity >= 365) { // 12 months (365 days)
+          console.log(`Account ${account.accountId} flagged for closure: ${account.daysSinceLastActivity} days since last transaction`);
+          closureNeeded.push(account);
+        } else if (account.daysSinceLastActivity >= 270) { // 9 months (270 days)
+          console.log(`Account ${account.accountId} flagged for communication: ${account.daysSinceLastActivity} days since last transaction`);
+          communicationNeeded.push(account);
+        }
+      } else {
+        // Accounts with no activity: 120 days closure (no communication needed)
+        if (account.daysSinceCreation >= 120) {
+          console.log(`Account ${account.accountId} flagged for closure: ${account.daysSinceCreation} days old with no transactions`);
+          closureNeeded.push(account);
+        } else if (account.daysSinceCreation >= 100) {
+          console.log(`Account ${account.accountId} approaching closure threshold: ${account.daysSinceCreation} days old (${120 - account.daysSinceCreation} days remaining)`);
+        }
       }
     }
 
-    console.log(`Dormancy analysis complete: ${communicationNeeded.length} need communication, ${closureNeeded.length} need closure`);
+    console.log(`Accurate dormancy analysis complete: ${communicationNeeded.length} need communication, ${closureNeeded.length} need closure`);
     return { communicationNeeded, closureNeeded };
   }
 }

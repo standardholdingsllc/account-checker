@@ -48,12 +48,15 @@ export async function GET(request: NextRequest) {
         style: 'currency',
         currency: 'USD'
       }).format(account.balance / 100),
+      hasActivity: account.hasActivity,
       daysSinceCreation: account.daysSinceCreation,
       accountCreated: account.accountCreated.toISOString().split('T')[0], // YYYY-MM-DD format
+      lastActivity: account.lastActivity ? account.lastActivity.toISOString().split('T')[0] : 'Never',
+      daysSinceLastActivity: account.daysSinceLastActivity,
       status: account.status,
-      closureReason: account.daysSinceCreation >= 120 ? 
-        'No activity for 120+ days' : 
-        'Meets closure criteria'
+      closureReason: account.hasActivity ? 
+        `No activity for ${account.daysSinceLastActivity} days (12+ months)` : 
+        `No transactions for ${account.daysSinceCreation} days (120+ days)`
     }));
 
     // Check if CSV export is requested
@@ -67,8 +70,11 @@ export async function GET(request: NextRequest) {
         'Customer ID', 
         'Customer Name',
         'Balance (USD)',
+        'Has Activity',
         'Days Since Creation',
         'Created Date',
+        'Last Activity Date',
+        'Days Since Last Activity',
         'Status',
         'Closure Reason'
       ].join(',');
@@ -79,8 +85,11 @@ export async function GET(request: NextRequest) {
         account.customerId,
         `"${account.customerName}"`, // Quote customer names in case of commas
         account.balanceFormatted.replace('$', '').replace(',', ''), // Remove formatting for CSV
+        account.hasActivity ? 'Yes' : 'No',
         account.daysSinceCreation,
         account.accountCreated,
+        account.lastActivity,
+        account.daysSinceLastActivity,
         account.status,
         `"${account.closureReason}"`
       ].join(','));
