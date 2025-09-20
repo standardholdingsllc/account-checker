@@ -8,8 +8,6 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [summary, setSummary] = useState<any>(null);
-  const [isLoadingDebug, setIsLoadingDebug] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<any>(null);
 
   const runCheck = async () => {
     setIsRunning(true);
@@ -17,7 +15,7 @@ export default function Home() {
     setLastResult(null);
 
     try {
-      const response = await fetch('/api/check-dormant', {
+      const response = await fetch('/api/check-dormant?manual=true', {
         method: 'GET',
       });
 
@@ -58,28 +56,6 @@ export default function Home() {
     }
   };
 
-  const getDebugInfo = async () => {
-    setIsLoadingDebug(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/debug', {
-        method: 'GET',
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Debug failed');
-      }
-
-      setDebugInfo(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error occurred');
-    } finally {
-      setIsLoadingDebug(false);
-    }
-  };
 
   const getResultMessage = () => {
     if (!lastResult) return null;
@@ -236,33 +212,6 @@ export default function Home() {
                 </span>
               )}
               </button>
-
-              <button
-                onClick={getDebugInfo}
-                disabled={isLoadingDebug}
-                className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-                  isLoadingDebug
-                    ? 'bg-gray-400 cursor-not-allowed text-white'
-                    : 'bg-orange-600 hover:bg-orange-700 text-white shadow-md hover:shadow-lg transform hover:scale-105'
-                }`}
-              >
-                {isLoadingDebug ? (
-                  <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Loading...
-                  </span>
-                ) : (
-                  <span className="flex items-center">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                    </svg>
-                    Debug Info
-                  </span>
-                )}
-              </button>
             </div>
 
             {/* Summary Display */}
@@ -289,91 +238,9 @@ export default function Home() {
               </div>
             )}
 
-            {/* Debug Display */}
-            {debugInfo && !error && (
-              <div className="mt-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                <h3 className="font-medium text-orange-900 mb-3">Debug Information</h3>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-orange-600">{debugInfo.debug.totalAccounts}</div>
-                      <div className="text-orange-700">Total Accounts</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">{debugInfo.debug.dormancyAnalysis.summary.noActivityCount}</div>
-                      <div className="text-blue-700">No Activity</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-red-600">{debugInfo.debug.dormancyAnalysis.summary.olderThan120DaysCount}</div>
-                      <div className="text-red-700">120+ Days Old</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-purple-600">{debugInfo.debug.dormancyAnalysis.summary.needs9MonthCommunication + debugInfo.debug.dormancyAnalysis.summary.needs12MonthClosure}</div>
-                      <div className="text-purple-700">Needs Action</div>
-                    </div>
-                  </div>
-                  
-                  {debugInfo.debug.dormancyAnalysis.accountsOlderThan120Days.length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="font-medium text-orange-900 mb-2">Accounts 120+ Days Old (No Activity):</h4>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {debugInfo.debug.dormancyAnalysis.accountsOlderThan120Days.map((account: any) => (
-                          <div key={account.accountId} className="p-3 bg-white rounded border text-sm">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <div className="font-medium">{account.customerName}</div>
-                                <div className="text-gray-600">ID: {account.accountId}</div>
-                                <div className="text-gray-600">Balance: ${account.balance.toFixed(2)}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-medium text-red-600">{account.daysSinceCreation} days</div>
-                                <div className="text-gray-500">since creation</div>
-                                <div className="text-gray-500">Status: {account.status}</div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {debugInfo.debug.dormancyAnalysis.accountsWithNoActivity.length > 0 && debugInfo.debug.dormancyAnalysis.accountsOlderThan120Days.length === 0 && (
-                    <div className="mt-4">
-                      <h4 className="font-medium text-orange-900 mb-2">All Accounts with No Activity (Under 120 Days):</h4>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {debugInfo.debug.dormancyAnalysis.accountsWithNoActivity.slice(0, 5).map((account: any) => (
-                          <div key={account.accountId} className="p-3 bg-white rounded border text-sm">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <div className="font-medium">{account.customerName}</div>
-                                <div className="text-gray-600">ID: {account.accountId}</div>
-                                <div className="text-gray-600">Balance: ${account.balance.toFixed(2)}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-medium text-blue-600">{account.daysSinceCreation} days</div>
-                                <div className="text-gray-500">since creation</div>
-                                <div className="text-gray-500">Status: {account.status}</div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                        {debugInfo.debug.dormancyAnalysis.accountsWithNoActivity.length > 5 && (
-                          <div className="text-center text-gray-500 text-sm">
-                            ... and {debugInfo.debug.dormancyAnalysis.accountsWithNoActivity.length - 5} more
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="mt-3 text-xs text-orange-600">
-                  Updated: {new Date(debugInfo.timestamp).toLocaleString()}
-                </div>
-              </div>
-            )}
 
             {/* Results Display */}
-            {(lastResult || error) && !(summary && !error) && !(debugInfo && !error) && (
+            {(lastResult || error) && !(summary && !error) && (
               <div className="mt-6 p-4 rounded-lg border">
                 {error && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4">

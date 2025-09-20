@@ -27,7 +27,7 @@ export class DormancyService {
     }
   }
 
-  async checkDormantAccounts(): Promise<{
+  async checkDormantAccounts(isManual: boolean = false): Promise<{
     success: boolean;
     message: string;
     communicationNeeded: number;
@@ -36,9 +36,9 @@ export class DormancyService {
     const startTime = new Date();
     
     try {
-      // Check if it's a weekday
-      if (!this.isWeekday()) {
-        const message = `Skipping dormancy check - today is ${format(startTime, 'EEEE')} (weekend)`;
+      // Only check weekdays for automated runs, allow manual runs any time
+      if (!isManual && !this.isWeekday()) {
+        const message = `Skipping automated dormancy check - today is ${format(startTime, 'EEEE')} (weekend)`;
         console.log(message);
         return {
           success: true,

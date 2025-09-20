@@ -42,8 +42,11 @@ export async function GET(request: NextRequest) {
     const slackService = new SlackService(slackWebhookUrl);
     const dormancyService = new DormancyService(unitClient, slackService);
 
+    // Check if this is a manual trigger (has manual=true query parameter)
+    const isManual = request.nextUrl.searchParams.get('manual') === 'true';
+    
     // Run the dormancy check
-    const result = await dormancyService.checkDormantAccounts();
+    const result = await dormancyService.checkDormantAccounts(isManual);
 
     // Return the result
     return NextResponse.json({
