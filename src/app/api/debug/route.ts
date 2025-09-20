@@ -48,6 +48,12 @@ export async function GET(request: NextRequest) {
         accountsOlderThan120Days: allAccounts.filter(acc => !acc.hasActivity && acc.daysSinceCreation >= 120),
         accountsOlderThan9Months: allAccounts.filter(acc => acc.hasActivity && acc.daysSinceLastActivity >= 270),
         accountsOlderThan12Months: allAccounts.filter(acc => acc.hasActivity && acc.daysSinceLastActivity >= 365),
+        summary: {
+          noActivityCount: allAccounts.filter(acc => !acc.hasActivity).length,
+          olderThan120DaysCount: allAccounts.filter(acc => !acc.hasActivity && acc.daysSinceCreation >= 120).length,
+          needs9MonthCommunication: allAccounts.filter(acc => acc.hasActivity && acc.daysSinceLastActivity >= 270).length,
+          needs12MonthClosure: allAccounts.filter(acc => acc.hasActivity && acc.daysSinceLastActivity >= 365).length,
+        }
       },
       filters: {
         closedAccountsSkipped: 'No - all accounts fetched, closed filtered in dormancy analysis only',
@@ -63,16 +69,7 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    // Add summary counts
-    debugInfo.dormancyAnalysis = {
-      ...debugInfo.dormancyAnalysis,
-      summary: {
-        noActivityCount: debugInfo.dormancyAnalysis.accountsWithNoActivity.length,
-        olderThan120DaysCount: debugInfo.dormancyAnalysis.accountsOlderThan120Days.length,
-        needs9MonthCommunication: debugInfo.dormancyAnalysis.accountsOlderThan9Months.length,
-        needs12MonthClosure: debugInfo.dormancyAnalysis.accountsOlderThan12Months.length,
-      }
-    };
+    // Summary counts are now included in the dormancyAnalysis object above
 
     return NextResponse.json({
       success: true,
