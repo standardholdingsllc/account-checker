@@ -129,22 +129,30 @@ export class UnitApiClient {
 
   async getAccountTransactions(accountId: string, limit = 1, offset = 0): Promise<UnitTransaction[]> {
     try {
+      // CORRECTED: Use the proper Unit.co API endpoint format
       const response: AxiosResponse<UnitApiListResponse<UnitTransaction>> = await this.client.get(
-        `/accounts/${accountId}/transactions?page[limit]=${limit}&page[offset]=${offset}&sort=-createdAt`
+        `/transactions?filter[accountId]=${accountId}&page[limit]=${limit}&page[offset]=${offset}&sort=-createdAt`
       );
+      console.log(`✅ Successfully fetched ${response.data.data.length} transactions for account ${accountId}`);
       return response.data.data;
     } catch (error) {
-      // Don't throw error if account has no transactions - this is expected for dormant accounts
       if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as { response?: { status?: number } };
+        const axiosError = error as { response?: { status?: number, data?: any } };
         if (axiosError.response?.status === 404) {
-          // 404 is expected for accounts with no transactions
-          console.log(`Account ${accountId} has no transactions (404 - expected for new/dormant accounts)`);
+          // 404 can mean no transactions exist for this account (legitimate)
           return [];
+        } else if (axiosError.response?.status === 403) {
+          console.error(`❌ Transaction API 403 for account ${accountId} - missing transactions:read permission`);
+          return [];
+        } else {
+          console.error(`❌ Transaction API Error for account ${accountId}:`, {
+            status: axiosError.response?.status,
+            data: axiosError.response?.data
+          });
         }
+      } else {
+        console.error(`❌ Unexpected transaction API error for account ${accountId}:`, error);
       }
-      // Only log non-404 errors
-      console.error(`Error fetching transactions for account ${accountId}:`, error);
       return [];
     }
   }
@@ -229,7 +237,21 @@ export class UnitApiClient {
     const communicationNeeded: AccountActivity[] = [];
     const closureNeeded: AccountActivity[] = [];
 
-    console.log(`Analyzing ${allAccounts.length} accounts for dormancy using proper business rules...`);
+    console.log(`Analyzing ${allAccounts.length} accounts for dormancy...`);
+
+    // Safety check: Verify transaction API is working properly
+    const accountsWithActivity = allAccounts.filter(acc => acc.hasActivity);
+    const activityRate = accountsWithActivity.length / allAccounts.length;
+    
+    console.log(`Activity detection stats: ${accountsWithActivity.length}/${allAccounts.length} accounts show activity (${Math.round(activityRate * 100)}%)`);
+    
+    if (activityRate < 0.05 && allAccounts.length > 1000) { // Less than 5% activity rate in very large dataset
+      console.warn(`⚠️ WARNING: Only ${Math.round(activityRate * 100)}% of accounts show transaction activity`);
+      console.warn(`⚠️ This seems unusually low - please verify results manually`);
+      console.warn(`⚠️ If incorrect, check transaction API permissions: transactions:read`);
+    } else {
+      console.log(`✅ Transaction API working correctly (${Math.round(activityRate * 100)}% activity rate)`);
+    }
 
     for (const account of allAccounts) {
       // Skip closed accounts for dormancy analysis
@@ -258,7 +280,7 @@ export class UnitApiClient {
       }
     }
 
-    console.log(`Accurate dormancy analysis complete: ${communicationNeeded.length} need communication, ${closureNeeded.length} need closure`);
+    console.log(`Dormancy analysis complete: ${communicationNeeded.length} need communication, ${closureNeeded.length} need closure`);
     return { communicationNeeded, closureNeeded };
   }
 }
