@@ -23,10 +23,13 @@ export class UnitApiClient {
       timeout: 30000, // 30 seconds timeout as per Unit docs
     });
 
-    // Add request interceptor for logging
+    // Add request interceptor for logging (reduced verbosity)
     this.client.interceptors.request.use(
       (config) => {
-        console.log(`Making request to: ${config.method?.toUpperCase()} ${config.url}`);
+        // Only log non-routine requests to reduce spam
+        if (config.url?.includes('/identity') || config.url?.includes('/accounts?') || !config.url?.includes('transactions')) {
+          console.log(`Making request to: ${config.method?.toUpperCase()} ${config.url}`);
+        }
         return config;
       },
       (error) => {
@@ -63,8 +66,12 @@ export class UnitApiClient {
         );
         
         const accounts = response.data.data;
-        console.log(`Fetched ${accounts.length} accounts at offset ${currentOffset}`);
         allAccounts.push(...accounts);
+        
+        // Log progress every 10 batches to reduce spam
+        if (currentOffset % 1000 === 0 || accounts.length < limit) {
+          console.log(`Fetched ${accounts.length} accounts at offset ${currentOffset} (total: ${allAccounts.length})`);
+        }
 
         // Check if we got fewer results than requested, indicating we've reached the end
         if (accounts.length < limit) {
@@ -129,12 +136,12 @@ export class UnitApiClient {
       if (error && typeof error === 'object' && 'response' in error) {
         const axiosError = error as { response?: { status?: number } };
         if (axiosError.response?.status === 404) {
-          console.log(`Account ${accountId} has no transactions (404 - expected for new accounts)`);
+          // 404 is expected for accounts with no transactions, don't log as it's normal
           return [];
         }
       }
+      // Only log non-404 errors
       console.error(`Error fetching transactions for account ${accountId}:`, error);
-      // Return empty array instead of throwing - account might exist but have no transactions
       return [];
     }
   }
@@ -149,7 +156,10 @@ export class UnitApiClient {
       const account = accounts[i];
       
       try {
-        console.log(`Processing account ${i + 1}/${accounts.length}: ${account.id} (${account.attributes.status})`);
+        // Log progress every 100 accounts to reduce log spam
+        if (i % 100 === 0 || i < 20) {
+          console.log(`Processing account ${i + 1}/${accounts.length}: ${account.id} (${account.attributes.status})`);
+        }
         
         // Get customer information - handle cases where customer might not exist
         let customer;
@@ -158,10 +168,22 @@ export class UnitApiClient {
         
         try {
           customer = await this.getCustomer(account.relationships.customer.data.id);
-          customerName = `${customer.attributes.fullName.first} ${customer.attributes.fullName.last}`;
+          // Handle different customer name structures
+          if (customer.attributes.fullName) {
+            if (typeof customer.attributes.fullName === 'string') {
+              customerName = customer.attributes.fullName;
+            } else if (customer.attributes.fullName.first && customer.attributes.fullName.last) {
+              customerName = `${customer.attributes.fullName.first} ${customer.attributes.fullName.last}`;
+            } else {
+              customerName = 'Unknown Customer';
+            }
+          } else {
+            customerName = 'Unknown Customer';
+          }
           customerEmail = customer.attributes.email;
         } catch (customerError) {
           console.warn(`Could not fetch customer ${account.relationships.customer.data.id} for account ${account.id}:`, customerError);
+          customerName = 'Unknown Customer';
           // Continue processing account even if customer data is missing
         }
         
@@ -227,7 +249,13 @@ export class UnitApiClient {
         continue;
       }
 
-      console.log(`Account ${account.accountId}: ${account.hasActivity ? 'has activity' : 'no activity'}, ${account.daysSinceCreation} days old, ${account.daysSinceLastActivity} days since last activity`);
+      // Only log accounts that are flagged or close to being flagged
+      const willBeFlagged = (!account.hasActivity && account.daysSinceCreation >= 120) || 
+                           (account.hasActivity && account.daysSinceLastActivity >= 270);
+      
+      if (willBeFlagged || account.daysSinceCreation >= 100 || account.daysSinceLastActivity >= 250) {
+        console.log(`Account ${account.accountId}: ${account.hasActivity ? 'has activity' : 'no activity'}, ${account.daysSinceCreation} days old, ${account.daysSinceLastActivity} days since last activity`);
+      }
 
       if (account.hasActivity) {
         // Accounts with activity: 9 months = communication, 12 months = closure
