@@ -3,7 +3,6 @@ import {
   UnitApiConfig,
   UnitAccount,
   UnitTransaction,
-  UnitCustomer,
   UnitApiListResponse,
   UnitApiResponse,
   AccountActivity,
@@ -87,7 +86,7 @@ export class UnitApiClient {
         }
 
         // Add small delay to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, 25));
       }
 
       console.log(`Total accounts fetched: ${allAccounts.length}`);
@@ -113,17 +112,8 @@ export class UnitApiClient {
     }
   }
 
-  async getCustomer(customerId: string): Promise<UnitCustomer> {
-    try {
-      const response: AxiosResponse<UnitApiResponse<UnitCustomer>> = await this.client.get(
-        `/customers/${customerId}`
-      );
-      return response.data.data;
-    } catch (error) {
-      console.error(`Error fetching customer ${customerId}:`, error);
-      throw error;
-    }
-  }
+  // Customer API disabled due to permission issues in production
+  // async getCustomer(customerId: string): Promise<UnitCustomer> { ... }
 
   async getAccountTransactions(accountId: string, limit = 1, offset = 0): Promise<UnitTransaction[]> {
     try {
@@ -161,30 +151,15 @@ export class UnitApiClient {
           console.log(`Processing account ${i + 1}/${accounts.length}: ${account.id} (${account.attributes.status})`);
         }
         
-        // Get customer information - handle cases where customer might not exist
-        let customer;
-        let customerName = 'Unknown Customer';
-        let customerEmail: string | undefined;
+        // Skip customer lookup for now due to permission issues
+        // Use account-based identifiers instead
+        let customerName = `Account ${account.id}`;
+        let customerEmail: string | undefined = undefined;
+        let customerId = account.relationships.customer.data.id;
         
-        try {
-          customer = await this.getCustomer(account.relationships.customer.data.id);
-          // Handle different customer name structures
-          if (customer.attributes.fullName) {
-            if (typeof customer.attributes.fullName === 'string') {
-              customerName = customer.attributes.fullName;
-            } else if (customer.attributes.fullName.first && customer.attributes.fullName.last) {
-              customerName = `${customer.attributes.fullName.first} ${customer.attributes.fullName.last}`;
-            } else {
-              customerName = 'Unknown Customer';
-            }
-          } else {
-            customerName = 'Unknown Customer';
-          }
-          customerEmail = customer.attributes.email;
-        } catch (customerError) {
-          console.warn(`Could not fetch customer ${account.relationships.customer.data.id} for account ${account.id}:`, customerError);
-          customerName = 'Unknown Customer';
-          // Continue processing account even if customer data is missing
+        // Log customer permission issue only once every 100 accounts
+        if (i % 100 === 0 && i < 500) {
+          console.warn(`Customer API returning 404s - likely permission issue. Using account IDs instead.`);
         }
         
         // Get account transactions - this should not throw errors now
@@ -204,7 +179,7 @@ export class UnitApiClient {
 
         const activity: AccountActivity = {
           accountId: account.id,
-          customerId: customer?.id || 'unknown',
+          customerId: customerId,
           customerName,
           customerEmail,
           accountCreated,
@@ -219,7 +194,7 @@ export class UnitApiClient {
         accountActivities.push(activity);
 
         // Add a small delay to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, 25));
       } catch (error) {
         console.error(`Error processing account ${account.id}:`, error);
         console.error('Account data:', JSON.stringify(account, null, 2));
