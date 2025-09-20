@@ -1,5 +1,5 @@
 {
-  "name": "account-closure-finder",
+  "name": "account-checker",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -21,6 +21,9 @@
   },
   "devDependencies": {
     "eslint": "^8",
-    "eslint-config-next": "14.0.3"
+    "eslint-config-next": "14.0.3",
+    "tailwindcss": "^3.3.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31"
   }
 }

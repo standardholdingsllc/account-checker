@@ -2,8 +2,8 @@ import './globals.css'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Account Closure Finder',
-  description: 'Automated dormant account monitoring system',
+  title: 'Account Checker',
+  description: 'Automated monitoring system ensuring compliance and operational excellence',
 }
 
 export default function RootLayout({

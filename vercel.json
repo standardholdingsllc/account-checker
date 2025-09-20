@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/check-dormant",
-      "schedule": "0 10 * * 1-5"
+      "schedule": "0 15 * * 1-5"
     }
   ]
 }

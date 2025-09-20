@@ -1,30 +1,21 @@
-# Account Closure Finder
+# Account Checker
 
-An automated system that monitors dormant accounts through Unit.co's API and sends alerts to your team's Slack channel.
+An automated monitoring system that integrates with Unit.co's API and sends alerts to your team's Slack channel.
 
 ## Features
 
-- **Automated Monitoring**: Scans Unit.co accounts for dormancy patterns
-- **Smart Alerts**: Different alerts for different dormancy stages
+- **Automated Monitoring**: Continuous account analysis and monitoring
+- **Smart Alerts**: Intelligent notification system
 - **Weekday-Only Operation**: Respects your team's work schedule
 - **Slack Integration**: Rich notifications with account details and balances
 - **Vercel Deployment**: Easy serverless deployment with cron scheduling
-
-## Dormancy Rules
-
-### Accounts with Previous Activity
-- **9 months** of inactivity → Communication alert (email, WhatsApp, phone attempts)
-- **12 months** of inactivity → Closure alert
-
-### Accounts with No Activity
-- **120 days** from account creation → Direct closure alert (no communication phase)
 
 ## Quick Start
 
 ### 1. Clone and Install
 ```bash
 git clone <your-repo>
-cd account-closure-finder
+cd account-checker
 npm install
 ```
 
@@ -52,28 +43,28 @@ Add your environment variables in Vercel's dashboard under Project Settings > En
 
 ## Scheduled Execution
 
-The system automatically runs Monday-Friday at 10:00 AM UTC via Vercel Cron Jobs. The schedule is defined in `vercel.json`:
+The system automatically runs Monday-Friday at 10:00 AM EST via Vercel Cron Jobs. The schedule is defined in `vercel.json`:
 
 ```json
 {
   "crons": [
     {
       "path": "/api/check-dormant",
-      "schedule": "0 10 * * 1-5"
+      "schedule": "0 15 * * 1-5"
     }
   ]
 }
 ```
 
 You can modify the schedule using standard cron syntax:
-- `0 10 * * 1-5` = 10:00 AM, Monday-Friday
-- `0 14 * * 1-5` = 2:00 PM, Monday-Friday
-- `30 9 * * 1-5` = 9:30 AM, Monday-Friday
+- `0 15 * * 1-5` = 10:00 AM EST, Monday-Friday  
+- `0 19 * * 1-5` = 2:00 PM EST, Monday-Friday
+- `30 14 * * 1-5` = 9:30 AM EST, Monday-Friday
 
 ## API Endpoints
 
 ### GET `/api/check-dormant`
-Runs the full dormancy check and sends alerts to Slack.
+Runs the full monitoring check and sends alerts to Slack.
 
 **Response:**
 ```json
@@ -127,17 +118,11 @@ curl -H "Authorization: Bearer your-secret-key" https://your-app.vercel.app/api/
 
 The system sends rich Slack messages with:
 
-### Communication Alerts (9 months)
-- List of accounts requiring communication attempts
+### Account Alerts
+- Detailed account information
 - Customer names and contact information
-- Account balances and last activity dates
+- Account balances and activity dates
 - Clear action items for the team
-
-### Closure Alerts (12 months / 120 days)
-- Accounts ready for closure
-- Total balance impact
-- Distinction between previously active and never-active accounts
-- Final notice requirements
 
 ### Status Updates
 - Daily execution confirmations
