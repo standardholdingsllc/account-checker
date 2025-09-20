@@ -162,7 +162,7 @@ export class SlackService {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `🤖 *Account Closure Finder Status*\n\n${message}`
+              text: `🤖 *Account Checker Status*\n\n${message}`
             }
           }
         ]
@@ -185,13 +185,13 @@ export class SlackService {
   async sendErrorAlert(error: string, details?: string): Promise<void> {
     try {
       const slackMessage = {
-        text: "❌ Account Closure Finder Error",
+        text: "❌ Account Checker Error",
         blocks: [
           {
             type: "header",
             text: {
               type: "plain_text",
-              text: "❌ Account Closure Finder Error"
+              text: "❌ Account Checker Error"
             }
           },
           {

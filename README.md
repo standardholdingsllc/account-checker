@@ -124,10 +124,8 @@ The system sends rich Slack messages with:
 - Account balances and activity dates
 - Clear action items for the team
 
-### Status Updates
-- Daily execution confirmations
-- Error alerts with technical details
-- Summary statistics
+### Error Alerts
+- Error notifications with technical details when issues occur
 
 ## Technical Details
 

@@ -49,9 +49,6 @@ export class DormancyService {
       }
 
       console.log(`Starting dormancy check at ${format(startTime, 'PPpp')}`);
-      
-      // Send status update to Slack
-      await this.slackService.sendStatusMessage(`🔍 Starting dormancy check at ${format(startTime, 'PPp')}...`);
 
       // Get dormant accounts from Unit API
       const { communicationNeeded, closureNeeded } = await this.unitClient.getDormantAccounts();
@@ -82,18 +79,7 @@ export class DormancyService {
       const endTime = new Date();
       const duration = Math.round((endTime.getTime() - startTime.getTime()) / 1000);
       
-      // Send completion status
-      if (communicationNeeded.length === 0 && closureNeeded.length === 0) {
-        await this.slackService.sendStatusMessage(
-          `✅ Dormancy check completed successfully at ${format(endTime, 'PPp')}\n` +
-          `No dormant accounts found. Duration: ${duration}s`
-        );
-      } else {
-        await this.slackService.sendStatusMessage(
-          `✅ Dormancy check completed at ${format(endTime, 'PPp')}\n` +
-          `Found ${communicationNeeded.length + closureNeeded.length} dormant accounts. Duration: ${duration}s`
-        );
-      }
+      console.log(`Check completed at ${format(endTime, 'PPp')} in ${duration}s`);
 
       return {
         success: true,
