@@ -126,9 +126,12 @@ export class UnitApiClient {
       return response.data.data;
     } catch (error) {
       // Don't throw error if account has no transactions - this is expected for dormant accounts
-      if (error.response?.status === 404) {
-        console.log(`Account ${accountId} has no transactions (404 - expected for new accounts)`);
-        return [];
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number } };
+        if (axiosError.response?.status === 404) {
+          console.log(`Account ${accountId} has no transactions (404 - expected for new accounts)`);
+          return [];
+        }
       }
       console.error(`Error fetching transactions for account ${accountId}:`, error);
       // Return empty array instead of throwing - account might exist but have no transactions
