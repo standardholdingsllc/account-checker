@@ -33,6 +33,37 @@ export async function GET(request: NextRequest) {
       throw new Error('SLACK_WEBHOOK_URL environment variable is required');
     }
 
+    // Test the API token first
+    console.log('Testing Unit API authentication...');
+    console.log('Base URL:', unitBaseUrl);
+    console.log('Token length:', unitToken.length);
+    console.log('Token prefix:', unitToken.substring(0, 20) + '...');
+
+    // Test API call manually first
+    try {
+      const testResponse = await fetch(`${unitBaseUrl}/identity`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${unitToken}`,
+          'Content-Type': 'application/vnd.api+json',
+        },
+      });
+
+      console.log('Identity API response status:', testResponse.status);
+      
+      if (!testResponse.ok) {
+        const errorText = await testResponse.text();
+        console.error('Identity API error:', errorText);
+        throw new Error(`Unit API authentication failed: ${testResponse.status} - ${errorText}`);
+      }
+
+      const identityData = await testResponse.json();
+      console.log('Authentication successful:', identityData);
+    } catch (authError) {
+      console.error('Authentication test failed:', authError);
+      throw new Error(`Authentication failed: ${authError instanceof Error ? authError.message : String(authError)}`);
+    }
+
     // Initialize services
     const unitClient = new UnitApiClient({
       baseUrl: unitBaseUrl,
