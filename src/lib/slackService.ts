@@ -182,6 +182,13 @@ export class SlackService {
       'Send communication attempts to all flagged accounts' :
       'Process closure for all flagged accounts';
 
+    // Try to get the base URL from environment or use a fallback
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : process.env.NEXT_PUBLIC_BASE_URL 
+      ? process.env.NEXT_PUBLIC_BASE_URL
+      : 'https://your-app.vercel.app'; // You'll need to replace this with your actual URL
+
     const slackMessage = {
       text: `${alertTitle} - ${alert.accounts.length} Accounts`,
       blocks: [
@@ -203,7 +210,7 @@ export class SlackService {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*Action Required:* ${actionText}\n\n⚠️ *Note:* Too many accounts to list individually. Check logs for detailed account information.`
+            text: `*Action Required:* ${actionText}\n\n📥 *Get Detailed Account List:*\n• <${baseUrl}/api/dormant-accounts?format=csv|Download CSV>\n• <${baseUrl}/api/dormant-accounts|View JSON Data>\n• <${baseUrl}|Open Dashboard>`
           }
         }
       ]

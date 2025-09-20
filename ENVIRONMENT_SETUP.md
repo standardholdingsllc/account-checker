@@ -26,10 +26,13 @@ UNIT_API_BASE_URL=https://api.s.unit.sh
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
 ```
 
-### Optional Security
+### Optional Configuration
 ```bash
 # Optional: Protect the cron endpoint with a secret
 CRON_SECRET=your_secret_key_for_cron_protection
+
+# Optional: Set your app URL for Slack links (auto-detected on Vercel)
+NEXT_PUBLIC_BASE_URL=https://your-app.vercel.app
 ```
 
 ## Complete .env.local Example
@@ -38,6 +41,7 @@ UNIT_API_TOKEN=v2.public.eyJyb2xlIjoib3JnIiwidX...
 UNIT_API_BASE_URL=https://api.s.unit.sh
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T1234567890/B1234567890/XXXXXXXXXXXXXXXXXXXXXXXX
 CRON_SECRET=my-secure-random-string-123
+NEXT_PUBLIC_BASE_URL=https://your-app.vercel.app
 ```
 
 ## Setup Instructions
