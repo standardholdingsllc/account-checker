@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { UnitApiClient } from '@/lib/unitClient';
 
+// Prevent static generation during build - this route makes external API calls
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET(request: NextRequest) {
   try {
     // Validate required environment variables

@@ -3,6 +3,10 @@ import { UnitApiClient } from '@/lib/unitClient';
 import { SlackService } from '@/lib/slackService';
 import { DormancyService } from '@/lib/dormancyService';
 
+// Prevent static generation during build - this route makes external API calls
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET(request: NextRequest) {
   try {
     // Optional: Check for authorization header to secure the endpoint
