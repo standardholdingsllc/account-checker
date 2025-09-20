@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('Starting dormancy check with Unit API...');
+    console.log(`Environment: ${unitBaseUrl.includes('s.unit.sh') ? 'Sandbox' : 'Production'}`);
 
     // Initialize services
     const unitClient = new UnitApiClient({

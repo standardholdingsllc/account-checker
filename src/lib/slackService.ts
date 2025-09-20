@@ -16,19 +16,25 @@ export class SlackService {
     }).format(amount / 100); // Unit API returns amounts in cents
   }
 
-  private formatAccountList(accounts: AccountActivity[]): string {
-    return accounts.map((account, index) => {
+  private formatAccountList(accounts: AccountActivity[], maxAccounts: number = 10): string {
+    const accountsToShow = accounts.slice(0, maxAccounts);
+    const remainingCount = accounts.length - accountsToShow.length;
+    
+    let result = accountsToShow.map((account, index) => {
       const balanceStr = this.formatCurrency(account.balance);
-      const lastActivityStr = account.lastActivity 
-        ? format(account.lastActivity, 'MMM dd, yyyy')
-        : 'Never';
+      const createdStr = format(account.accountCreated, 'MMM dd, yyyy');
       
       return `${index + 1}. *${account.customerName}* (ID: ${account.accountId})\n` +
-             `   📧 ${account.customerEmail || 'No email'}\n` +
              `   💰 Balance: ${balanceStr}\n` +
-             `   📅 Last Activity: ${lastActivityStr}\n` +
-             `   ⏰ Days Since Activity: ${account.hasActivity ? account.daysSinceLastActivity : account.daysSinceCreation} days`;
+             `   📅 Created: ${createdStr}\n` +
+             `   ⏰ Age: ${account.daysSinceCreation} days old`;
     }).join('\n\n');
+    
+    if (remainingCount > 0) {
+      result += `\n\n... and ${remainingCount} more accounts`;
+    }
+    
+    return result;
   }
 
   private createCommunicationAlert(accounts: AccountActivity[]) {
@@ -73,19 +79,22 @@ export class SlackService {
   }
 
   private createClosureAlert(accounts: AccountActivity[]) {
-    const activeAccounts = accounts.filter(acc => acc.hasActivity);
-    const inactiveAccounts = accounts.filter(acc => !acc.hasActivity);
     const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+    
+    // Sort accounts by balance (highest first) to show most important ones
+    const sortedAccounts = accounts.sort((a, b) => b.balance - a.balance);
+    
+    // Calculate statistics
+    const avgAge = accounts.reduce((sum, acc) => sum + acc.daysSinceCreation, 0) / accounts.length;
+    const oldestAccount = Math.max(...accounts.map(acc => acc.daysSinceCreation));
+    const maxAccountsToShow = accounts.length > 20 ? 5 : 10; // Show fewer if too many
 
-    let alertText = `*${accounts.length}* accounts are ready for closure.\n*Total Balance:* ${this.formatCurrency(totalBalance)}\n\n`;
-    
-    if (activeAccounts.length > 0) {
-      alertText += `*${activeAccounts.length}* accounts with previous activity (12+ months dormant)\n`;
-    }
-    
-    if (inactiveAccounts.length > 0) {
-      alertText += `*${inactiveAccounts.length}* accounts with no activity (120+ days old)\n`;
-    }
+    let alertText = `*${accounts.length}* accounts are ready for closure.\n`;
+    alertText += `*Total Balance:* ${this.formatCurrency(totalBalance)}\n`;
+    alertText += `*Average Age:* ${Math.round(avgAge)} days\n`;
+    alertText += `*Oldest Account:* ${oldestAccount} days\n\n`;
+    alertText += `*All accounts are 120+ days old* (simplified detection - transaction data unavailable due to API permissions)\n`;
+    alertText += `⚠️ *Note:* Using conservative approach based on account creation date only.`;
 
     return {
       text: "⚠️ Account Closure Alert - Final Notice Required",
@@ -118,7 +127,7 @@ export class SlackService {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*Accounts to Close:*\n\n${this.formatAccountList(accounts)}`
+            text: `*Top ${maxAccountsToShow} Accounts by Balance:*\n\n${this.formatAccountList(sortedAccounts, maxAccountsToShow)}`
           }
         }
       ]
@@ -127,6 +136,13 @@ export class SlackService {
 
   async sendDormancyAlert(alert: DormancyAlert): Promise<void> {
     try {
+      // Safety check: if too many accounts, send a summary alert instead
+      if (alert.accounts.length > 500) {
+        console.warn(`Too many dormant accounts (${alert.accounts.length}) - sending summary alert only`);
+        await this.sendSummaryAlert(alert);
+        return;
+      }
+
       let slackMessage;
 
       if (alert.type === 'communication_needed') {
@@ -151,6 +167,56 @@ export class SlackService {
       console.error('Error sending Slack alert:', error);
       throw error;
     }
+  }
+
+  private async sendSummaryAlert(alert: DormancyAlert): Promise<void> {
+    const totalBalance = alert.accounts.reduce((sum, acc) => sum + acc.balance, 0);
+    const avgAge = alert.accounts.reduce((sum, acc) => sum + acc.daysSinceCreation, 0) / alert.accounts.length;
+    const oldestAccount = Math.max(...alert.accounts.map(acc => acc.daysSinceCreation));
+    
+    const alertTitle = alert.type === 'communication_needed' ? 
+      '🔔 Large-Scale Communication Alert' : 
+      '⚠️ Large-Scale Closure Alert';
+    
+    const actionText = alert.type === 'communication_needed' ?
+      'Send communication attempts to all flagged accounts' :
+      'Process closure for all flagged accounts';
+
+    const slackMessage = {
+      text: `${alertTitle} - ${alert.accounts.length} Accounts`,
+      blocks: [
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: `${alertTitle} - ${alert.accounts.length} Accounts`
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Account Count:* ${alert.accounts.length}\n*Total Balance:* ${this.formatCurrency(totalBalance)}\n*Average Age:* ${Math.round(avgAge)} days\n*Oldest Account:* ${oldestAccount} days`
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Action Required:* ${actionText}\n\n⚠️ *Note:* Too many accounts to list individually. Check logs for detailed account information.`
+          }
+        }
+      ]
+    };
+
+    await axios.post(this.webhookUrl, slackMessage, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      timeout: 10000,
+    });
+
+    console.log(`Successfully sent summary alert for ${alert.accounts.length} accounts`);
   }
 
   async sendStatusMessage(message: string): Promise<void> {

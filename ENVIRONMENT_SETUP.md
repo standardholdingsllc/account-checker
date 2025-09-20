@@ -9,11 +9,14 @@ Create a `.env.local` file in the root directory with the following variables:
 # Get your API token from Unit Dashboard > Developer > API Tokens
 UNIT_API_TOKEN=your_unit_api_token_here
 
-# For sandbox testing (recommended for initial setup)
+# Unit.co API Environment URLs:
+# Sandbox (for testing) - use this for initial development
 UNIT_API_BASE_URL=https://api.s.unit.sh
 
-# For production, change to:
+# Production (live data) - switch to this when ready for live monitoring  
 # UNIT_API_BASE_URL=https://api.unit.co
+
+# Note: You'll need separate API tokens for sandbox vs production environments
 ```
 
 ### Slack Integration
@@ -42,10 +45,13 @@ CRON_SECRET=my-secure-random-string-123
 1. **Unit.co API Token**:
    - Log into your Unit Dashboard
    - Go to Developer > API Tokens
-   - Create a new token with appropriate scopes:
-     - `accounts` (read)
-     - `transactions` (read)  
-     - `customers` (read)
+   - Create a new **Org API Token** with the following scopes:
+     - `accounts:read` (required - to fetch account data)
+     - `customers:read` (optional - for customer names, may not be available)
+     - `accounts:transactions:read` (optional - for transaction history, may not be available)
+   
+   **Note**: Based on Unit.co documentation, some scopes may require bank partner approval.
+   The system works with just `accounts:read` scope using simplified dormancy detection.
 
 2. **Slack Webhook**:
    - Go to https://api.slack.com/apps

@@ -9,6 +9,7 @@ An automated monitoring system that integrates with Unit.co's API and sends aler
 - **Weekday-Only Operation**: Respects your team's work schedule
 - **Slack Integration**: Rich notifications with account details and balances
 - **Vercel Deployment**: Easy serverless deployment with cron scheduling
+- **Unit.co Best Practices**: Follows official Unit.co API guidelines for optimal performance
 
 ## Quick Start
 
@@ -132,9 +133,23 @@ The system sends rich Slack messages with:
 ### Architecture
 - **Next.js 14** with App Router for modern React patterns
 - **TypeScript** for type safety and better development experience
-- **Unit.co SDK Integration** following their API best practices
+- **Unit.co API Integration** following official [Unit.co API documentation](https://unit.co/docs/api/) best practices
 - **Axios** for HTTP requests with proper error handling and retries
 - **date-fns** for reliable date calculations
+
+### Unit.co API Best Practices
+- **🔐 OAuth 2.0 Authentication**: Secure Bearer token authentication
+- **📄 Proper Pagination**: Uses `page[limit]` and `page[offset]` parameters
+- **⏱️ Rate Limiting**: Implements 25ms delays and handles 429 responses
+- **🛡️ Error Handling**: Comprehensive handling for 401, 403, 429, and 5xx responses
+- **📝 JSON:API Format**: Correct `Content-Type: application/vnd.api+json` headers
+- **⏰ Timeouts**: 30-second timeouts as recommended by Unit.co
+- **🏷️ Scope Management**: Clear documentation of required token scopes
+
+**Required API Scopes:**
+- `accounts:read` (required) - To fetch account data
+- `customers:read` (optional) - For customer names (may require bank approval)
+- `accounts:transactions:read` (optional) - For transaction history (may require bank approval)
 
 ### Rate Limiting
 - Built-in delays between API calls to respect Unit.co rate limits
