@@ -50,12 +50,56 @@ export class UnitApiClient {
     );
   }
 
-  async getAccounts(limit = 1000, offset = 0): Promise<UnitAccount[]> {
+  async getAccounts(limit = 100, offset = 0): Promise<UnitAccount[]> {
     try {
-      const response: AxiosResponse<UnitApiListResponse<UnitAccount>> = await this.client.get(
-        `/accounts?page[limit]=${limit}&page[offset]=${offset}`
-      );
-      return response.data.data;
+      const allAccounts: UnitAccount[] = [];
+      let currentOffset = offset;
+      let hasMoreData = true;
+
+      while (hasMoreData) {
+        // Remove any status filters - get ALL accounts including closed ones
+        const response: AxiosResponse<UnitApiListResponse<UnitAccount>> = await this.client.get(
+          `/accounts?page[limit]=${limit}&page[offset]=${currentOffset}&sort=createdAt`
+        );
+        
+        const accounts = response.data.data;
+        console.log(`Fetched ${accounts.length} accounts at offset ${currentOffset}`);
+        allAccounts.push(...accounts);
+
+        // Check if we got fewer results than requested, indicating we've reached the end
+        if (accounts.length < limit) {
+          hasMoreData = false;
+        } else {
+          currentOffset += limit;
+        }
+
+        // Safety check to prevent infinite loops
+        if (allAccounts.length > 50000) {
+          console.warn('Reached maximum account limit (50,000) - stopping pagination');
+          hasMoreData = false;
+        }
+
+        // Add small delay to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+
+      console.log(`Total accounts fetched: ${allAccounts.length}`);
+      
+      // Log account types and statuses for debugging
+      const accountsByType = allAccounts.reduce((acc, account) => {
+        acc[account.type] = (acc[account.type] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      const accountsByStatus = allAccounts.reduce((acc, account) => {
+        acc[account.attributes.status] = (acc[account.attributes.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      console.log('Accounts by type:', accountsByType);
+      console.log('Accounts by status:', accountsByStatus);
+      
+      return allAccounts;
     } catch (error) {
       console.error('Error fetching accounts:', error);
       throw error;
@@ -74,15 +118,21 @@ export class UnitApiClient {
     }
   }
 
-  async getAccountTransactions(accountId: string, limit = 1000, offset = 0): Promise<UnitTransaction[]> {
+  async getAccountTransactions(accountId: string, limit = 1, offset = 0): Promise<UnitTransaction[]> {
     try {
       const response: AxiosResponse<UnitApiListResponse<UnitTransaction>> = await this.client.get(
         `/accounts/${accountId}/transactions?page[limit]=${limit}&page[offset]=${offset}&sort=-createdAt`
       );
       return response.data.data;
     } catch (error) {
+      // Don't throw error if account has no transactions - this is expected for dormant accounts
+      if (error.response?.status === 404) {
+        console.log(`Account ${accountId} has no transactions (404 - expected for new accounts)`);
+        return [];
+      }
       console.error(`Error fetching transactions for account ${accountId}:`, error);
-      throw error;
+      // Return empty array instead of throwing - account might exist but have no transactions
+      return [];
     }
   }
 
@@ -90,18 +140,30 @@ export class UnitApiClient {
     const accounts = await this.getAccounts();
     const accountActivities: AccountActivity[] = [];
 
-    for (const account of accounts) {
-      try {
-        // Skip closed accounts
-        if (account.attributes.status === 'Closed') {
-          continue;
-        }
+    console.log(`Processing ${accounts.length} accounts...`);
 
-        // Get customer information
-        const customer = await this.getCustomer(account.relationships.customer.data.id);
+    for (let i = 0; i < accounts.length; i++) {
+      const account = accounts[i];
+      
+      try {
+        console.log(`Processing account ${i + 1}/${accounts.length}: ${account.id} (${account.attributes.status})`);
         
-        // Get account transactions
-        const transactions = await this.getAccountTransactions(account.id, 1); // Only get the most recent transaction
+        // Get customer information - handle cases where customer might not exist
+        let customer;
+        let customerName = 'Unknown Customer';
+        let customerEmail: string | undefined;
+        
+        try {
+          customer = await this.getCustomer(account.relationships.customer.data.id);
+          customerName = `${customer.attributes.fullName.first} ${customer.attributes.fullName.last}`;
+          customerEmail = customer.attributes.email;
+        } catch (customerError) {
+          console.warn(`Could not fetch customer ${account.relationships.customer.data.id} for account ${account.id}:`, customerError);
+          // Continue processing account even if customer data is missing
+        }
+        
+        // Get account transactions - this should not throw errors now
+        const transactions = await this.getAccountTransactions(account.id, 1);
         
         const accountCreated = parseISO(account.attributes.createdAt);
         const hasActivity = transactions.length > 0;
@@ -117,9 +179,9 @@ export class UnitApiClient {
 
         const activity: AccountActivity = {
           accountId: account.id,
-          customerId: customer.id,
-          customerName: `${customer.attributes.fullName.first} ${customer.attributes.fullName.last}`,
-          customerEmail: customer.attributes.email,
+          customerId: customer?.id || 'unknown',
+          customerName,
+          customerEmail,
           accountCreated,
           lastActivity,
           hasActivity,
@@ -132,14 +194,16 @@ export class UnitApiClient {
         accountActivities.push(activity);
 
         // Add a small delay to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 50));
       } catch (error) {
         console.error(`Error processing account ${account.id}:`, error);
+        console.error('Account data:', JSON.stringify(account, null, 2));
         // Continue with other accounts even if one fails
         continue;
       }
     }
 
+    console.log(`Successfully processed ${accountActivities.length} accounts`);
     return accountActivities;
   }
 
@@ -152,22 +216,37 @@ export class UnitApiClient {
     const communicationNeeded: AccountActivity[] = [];
     const closureNeeded: AccountActivity[] = [];
 
+    console.log(`Analyzing ${allAccounts.length} accounts for dormancy...`);
+
     for (const account of allAccounts) {
+      // Skip closed accounts for dormancy analysis
+      if (account.status === 'Closed') {
+        continue;
+      }
+
+      console.log(`Account ${account.accountId}: ${account.hasActivity ? 'has activity' : 'no activity'}, ${account.daysSinceCreation} days old, ${account.daysSinceLastActivity} days since last activity`);
+
       if (account.hasActivity) {
         // Accounts with activity: 9 months = communication, 12 months = closure
         if (account.daysSinceLastActivity >= 365) { // 12 months (365 days)
+          console.log(`Account ${account.accountId} flagged for closure (${account.daysSinceLastActivity} days since activity)`);
           closureNeeded.push(account);
         } else if (account.daysSinceLastActivity >= 270) { // 9 months (270 days)
+          console.log(`Account ${account.accountId} flagged for communication (${account.daysSinceLastActivity} days since activity)`);
           communicationNeeded.push(account);
         }
       } else {
         // Accounts with no activity: 120 days = closure
         if (account.daysSinceCreation >= 120) {
+          console.log(`Account ${account.accountId} flagged for closure (${account.daysSinceCreation} days old, no activity)`);
           closureNeeded.push(account);
+        } else {
+          console.log(`Account ${account.accountId} is ${account.daysSinceCreation} days old with no activity (under 120 day threshold)`);
         }
       }
     }
 
+    console.log(`Dormancy analysis complete: ${communicationNeeded.length} need communication, ${closureNeeded.length} need closure`);
     return { communicationNeeded, closureNeeded };
   }
 }
