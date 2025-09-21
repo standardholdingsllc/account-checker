@@ -66,8 +66,8 @@ export class SlackService {
     const avgAge = accounts.reduce((sum, acc) => sum + acc.daysSinceCreation, 0) / accounts.length;
     const oldestAccount = Math.max(...accounts.map(acc => acc.daysSinceCreation));
     
-    // Calculate statistics
-    const activeAccounts = accounts.filter(acc => acc.hasActivity);
+    // Separate historical vs never-active accounts
+    const historicalAccounts = accounts.filter(acc => acc.hasActivity);
     const inactiveAccounts = accounts.filter(acc => !acc.hasActivity);
     
     const baseUrl = process.env.VERCEL_URL 
@@ -76,15 +76,25 @@ export class SlackService {
       ? process.env.NEXT_PUBLIC_BASE_URL
       : 'https://your-app.vercel.app';
 
-    let summaryText = `*${accounts.length}* accounts need immediate closure.\n\n*Summary:*\n• Account Count: *${accounts.length}*\n• Total Balance: *${this.formatCurrency(totalBalance)}*\n• Average Age: *${Math.round(avgAge)} days*\n• Oldest Account: *${oldestAccount} days*\n\n*Breakdown:*\n`;
+    let summaryText = `*${accounts.length}* accounts need immediate closure.\n\n*Summary:*\n• Account Count: *${accounts.length}*\n• Total Balance: *${this.formatCurrency(totalBalance)}*\n• Average Age: *${Math.round(avgAge)} days*\n• Oldest Account: *${oldestAccount} days*`;
+
+    // Build CSV download links section
+    let csvLinks = "*📥 Download Reports:*\n";
     
-    if (activeAccounts.length > 0) {
-      summaryText += `• ${activeAccounts.length} accounts with previous activity (12+ months dormant)\n`;
+    if (historicalAccounts.length > 0) {
+      const avgDormancy = Math.round(historicalAccounts.reduce((sum, acc) => sum + acc.daysSinceLastActivity, 0) / historicalAccounts.length);
+      summaryText += `\n\n*Historical Accounts (${historicalAccounts.length}):*\n• Previously active accounts now dormant 12+ months\n• Average dormancy: ${avgDormancy} days\n• Balance: ${this.formatCurrency(historicalAccounts.reduce((sum, acc) => sum + acc.balance, 0))}`;
+      csvLinks += `• <${baseUrl}/api/dormant-accounts?format=csv&type=historical|Historical Accounts CSV (${historicalAccounts.length})>\n`;
     }
     
     if (inactiveAccounts.length > 0) {
-      summaryText += `• ${inactiveAccounts.length} accounts with no activity (120+ days old)`;
+      const avgAge = Math.round(inactiveAccounts.reduce((sum, acc) => sum + acc.daysSinceCreation, 0) / inactiveAccounts.length);
+      summaryText += `\n\n*Never-Active Accounts (${inactiveAccounts.length}):*\n• No transaction history, 120+ days old\n• Average age: ${avgAge} days\n• Balance: ${this.formatCurrency(inactiveAccounts.reduce((sum, acc) => sum + acc.balance, 0))}`;
+      csvLinks += `• <${baseUrl}/api/dormant-accounts?format=csv&type=inactive|Never-Active Accounts CSV (${inactiveAccounts.length})>\n`;
     }
+
+    // Remove trailing newline
+    csvLinks = csvLinks.trim();
 
     return {
       text: "⚠️ Account Closure Alert - Final Notice Required",
@@ -114,7 +124,7 @@ export class SlackService {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*📥 Download Report:*\n• <${baseUrl}/api/dormant-accounts?format=csv&type=closure|Closure List CSV>`
+            text: csvLinks
           }
         }
       ]
@@ -169,14 +179,38 @@ export class SlackService {
       'Send communication attempts to all flagged accounts' :
       'Process closure for all flagged accounts';
 
-    const csvType = alert.type === 'communication_needed' ? 'communication' : 'closure';
-
     // Try to get the base URL from environment or use a fallback
     const baseUrl = process.env.VERCEL_URL 
       ? `https://${process.env.VERCEL_URL}` 
       : process.env.NEXT_PUBLIC_BASE_URL 
       ? process.env.NEXT_PUBLIC_BASE_URL
       : 'https://your-app.vercel.app';
+
+    let csvLinks = '*📥 Download Report:*\n';
+    
+    if (alert.type === 'communication_needed') {
+      csvLinks += `• <${baseUrl}/api/dormant-accounts?format=csv&type=communication|Warning List CSV>`;
+    } else {
+      // For closure alerts, provide separate links for historical and inactive if both exist
+      const historicalAccounts = alert.accounts.filter(acc => acc.hasActivity);
+      const inactiveAccounts = alert.accounts.filter(acc => !acc.hasActivity);
+      
+      if (historicalAccounts.length > 0) {
+        csvLinks += `• <${baseUrl}/api/dormant-accounts?format=csv&type=historical|Historical Accounts CSV (${historicalAccounts.length})>\n`;
+      }
+      
+      if (inactiveAccounts.length > 0) {
+        csvLinks += `• <${baseUrl}/api/dormant-accounts?format=csv&type=inactive|Never-Active Accounts CSV (${inactiveAccounts.length})>\n`;
+      }
+      
+      if (historicalAccounts.length === 0 || inactiveAccounts.length === 0) {
+        // If only one type exists, also provide combined CSV
+        csvLinks += `• <${baseUrl}/api/dormant-accounts?format=csv&type=closure|All Closure Accounts CSV>\n`;
+      }
+    }
+
+    // Remove trailing newline
+    csvLinks = csvLinks.trim();
 
     const slackMessage = {
       text: `${alertTitle} - ${alert.accounts.length} Accounts`,
@@ -199,7 +233,7 @@ export class SlackService {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*Action Required:* ${actionText}\n\n*📥 Download Report:*\n• <${baseUrl}/api/dormant-accounts?format=csv&type=${csvType}|${alert.type === 'communication_needed' ? 'Warning List CSV' : 'Closure List CSV'}>`
+            text: `*Action Required:* ${actionText}\n\n${csvLinks}`
           }
         }
       ]

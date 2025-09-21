@@ -42,6 +42,14 @@ export async function GET(request: NextRequest) {
     } else if (requestedType === 'closure') {
       selectedAccounts = closureNeeded;
       filename = 'closure-list';
+    } else if (requestedType === 'historical') {
+      // Historical accounts: had activity, now 12+ months dormant
+      selectedAccounts = closureNeeded.filter(acc => acc.hasActivity);
+      filename = 'historical-accounts';
+    } else if (requestedType === 'inactive') {
+      // Never-active accounts: no activity, 120+ days old
+      selectedAccounts = closureNeeded.filter(acc => !acc.hasActivity);
+      filename = 'never-active-accounts';
     } else {
       // Default: return all dormant accounts
       selectedAccounts = [...communicationNeeded, ...closureNeeded];
@@ -76,8 +84,8 @@ export async function GET(request: NextRequest) {
       daysSinceLastActivity: account.daysSinceLastActivity,
       status: account.status,
       closureReason: account.hasActivity ? 
-        `No activity for ${account.daysSinceLastActivity} days (12+ months)` : 
-        `No transactions for ${account.daysSinceCreation} days (120+ days)`
+        `Historical account - No activity for ${account.daysSinceLastActivity} days (12+ months dormant)` : 
+        `Never-active account - No transactions for ${account.daysSinceCreation} days (120+ days old)`
     }));
 
     // Check if CSV export is requested
@@ -133,6 +141,8 @@ export async function GET(request: NextRequest) {
         totalDormantAccounts: allDormantAccounts.length,
         communicationNeeded: communicationNeeded.length,
         closureNeeded: closureNeeded.length,
+        historicalAccounts: closureNeeded.filter(acc => acc.hasActivity).length,
+        inactiveAccounts: closureNeeded.filter(acc => !acc.hasActivity).length,
         totalBalance: totalBalance,
         totalBalanceFormatted: new Intl.NumberFormat('en-US', {
           style: 'currency',
@@ -149,6 +159,10 @@ export async function GET(request: NextRequest) {
           `${request.nextUrl.origin}${request.nextUrl.pathname}?format=csv&type=communication` : null,
         closureListCsv: closureNeeded.length > 0 ? 
           `${request.nextUrl.origin}${request.nextUrl.pathname}?format=csv&type=closure` : null,
+        historicalAccountsCsv: closureNeeded.filter(acc => acc.hasActivity).length > 0 ? 
+          `${request.nextUrl.origin}${request.nextUrl.pathname}?format=csv&type=historical` : null,
+        inactiveAccountsCsv: closureNeeded.filter(acc => !acc.hasActivity).length > 0 ? 
+          `${request.nextUrl.origin}${request.nextUrl.pathname}?format=csv&type=inactive` : null,
         allAccountsCsv: `${request.nextUrl.origin}${request.nextUrl.pathname}?format=csv`
       }
     });

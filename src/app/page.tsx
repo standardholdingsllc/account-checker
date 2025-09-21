@@ -8,7 +8,6 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [summary, setSummary] = useState<any>(null);
-  const [isLoadingExport, setIsLoadingExport] = useState(false);
 
   const runCheck = async () => {
     setIsRunning(true);
@@ -57,33 +56,6 @@ export default function Home() {
     }
   };
 
-  const exportDormantAccounts = async (type: 'communication' | 'closure' | 'all') => {
-    setIsLoadingExport(true);
-    setError(null);
-
-    try {
-      let url = '/api/dormant-accounts?format=csv';
-      if (type !== 'all') {
-        url += `&type=${type}`;
-      }
-      
-      // For CSV, trigger download
-      const link = document.createElement('a');
-      link.href = url;
-      
-      const filename = type === 'communication' ? 'warning-list' :
-                      type === 'closure' ? 'closure-list' : 'dormant-accounts';
-      link.download = `${filename}-${new Date().toISOString().split('T')[0]}.csv`;
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed');
-    } finally {
-      setIsLoadingExport(false);
-    }
-  };
 
   const getResultMessage = () => {
     if (!lastResult) return null;
@@ -242,59 +214,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Export Section */}
-            <div className="flex flex-wrap gap-3 justify-center mt-4">
-              <button
-                onClick={() => exportDormantAccounts('communication')}
-                disabled={isLoadingExport}
-                className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-                  isLoadingExport
-                    ? 'bg-gray-400 cursor-not-allowed text-white'
-                    : 'bg-yellow-600 hover:bg-yellow-700 text-white shadow-md hover:shadow-lg transform hover:scale-105'
-                }`}
-              >
-                <span className="flex items-center">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  ⚠️ Warning List CSV
-                </span>
-              </button>
-
-              <button
-                onClick={() => exportDormantAccounts('closure')}
-                disabled={isLoadingExport}
-                className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-                  isLoadingExport
-                    ? 'bg-gray-400 cursor-not-allowed text-white'
-                    : 'bg-red-600 hover:bg-red-700 text-white shadow-md hover:shadow-lg transform hover:scale-105'
-                }`}
-              >
-                <span className="flex items-center">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.99-.833-2.76 0L3.054 16.5C2.284 18.333 3.246 20 4.786 20z" />
-                  </svg>
-                  🚨 Closure List CSV
-                </span>
-              </button>
-
-              <button
-                onClick={() => exportDormantAccounts('all')}
-                disabled={isLoadingExport}
-                className={`px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                  isLoadingExport
-                    ? 'bg-gray-400 cursor-not-allowed text-white'
-                    : 'bg-gray-600 hover:bg-gray-700 text-white shadow-md hover:shadow-lg transform hover:scale-105'
-                }`}
-              >
-                <span className="flex items-center">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  📋 All Accounts CSV
-                </span>
-              </button>
-            </div>
 
             {/* Summary Display */}
             {summary && !error && (
