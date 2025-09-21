@@ -31,7 +31,24 @@ export async function GET(request: NextRequest) {
     // Get dormant accounts
     const { communicationNeeded, closureNeeded } = await unitClient.getDormantAccounts();
     
-    const allDormantAccounts = [...communicationNeeded, ...closureNeeded];
+    // Check if specific type is requested
+    const requestedType = request.nextUrl.searchParams.get('type');
+    let selectedAccounts: any[];
+    let filename: string;
+    
+    if (requestedType === 'communication') {
+      selectedAccounts = communicationNeeded;
+      filename = 'warning-list';
+    } else if (requestedType === 'closure') {
+      selectedAccounts = closureNeeded;
+      filename = 'closure-list';
+    } else {
+      // Default: return all dormant accounts
+      selectedAccounts = [...communicationNeeded, ...closureNeeded];
+      filename = 'dormant-accounts';
+    }
+    
+    const allDormantAccounts = selectedAccounts;
     
     // Calculate totals
     const totalBalance = allDormantAccounts.reduce((sum, acc) => sum + acc.balance, 0);
@@ -103,7 +120,7 @@ export async function GET(request: NextRequest) {
       return new Response(csvContent, {
         headers: {
           'Content-Type': 'text/csv',
-          'Content-Disposition': `attachment; filename="dormant-accounts-${new Date().toISOString().split('T')[0]}.csv"`
+          'Content-Disposition': `attachment; filename="${filename}-${new Date().toISOString().split('T')[0]}.csv"`
         }
       });
     }
@@ -111,6 +128,7 @@ export async function GET(request: NextRequest) {
     // Return JSON response with summary and account list
     return NextResponse.json({
       success: true,
+      requestedType: requestedType || 'all',
       summary: {
         totalDormantAccounts: allDormantAccounts.length,
         communicationNeeded: communicationNeeded.length,
@@ -127,8 +145,11 @@ export async function GET(request: NextRequest) {
       },
       accounts: accountList,
       downloadUrls: {
-        csv: `${request.nextUrl.origin}${request.nextUrl.pathname}?format=csv`,
-        json: `${request.nextUrl.origin}${request.nextUrl.pathname}`
+        warningListCsv: communicationNeeded.length > 0 ? 
+          `${request.nextUrl.origin}${request.nextUrl.pathname}?format=csv&type=communication` : null,
+        closureListCsv: closureNeeded.length > 0 ? 
+          `${request.nextUrl.origin}${request.nextUrl.pathname}?format=csv&type=closure` : null,
+        allAccountsCsv: `${request.nextUrl.origin}${request.nextUrl.pathname}?format=csv`
       }
     });
 

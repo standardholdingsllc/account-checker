@@ -16,33 +16,15 @@ export class SlackService {
     }).format(amount / 100); // Unit API returns amounts in cents
   }
 
-  private formatAccountList(accounts: AccountActivity[], maxAccounts: number = 10): string {
-    const accountsToShow = accounts.slice(0, maxAccounts);
-    const remainingCount = accounts.length - accountsToShow.length;
-    
-    let result = accountsToShow.map((account, index) => {
-      const balanceStr = this.formatCurrency(account.balance);
-      const createdStr = format(account.accountCreated, 'MMM dd, yyyy');
-      const lastActivityStr = account.lastActivity 
-        ? format(account.lastActivity, 'MMM dd, yyyy')
-        : 'Never';
-      
-      return `${index + 1}. *${account.customerName}* (ID: ${account.accountId})\n` +
-             `   💰 Balance: ${balanceStr}\n` +
-             `   📅 Created: ${createdStr}\n` +
-             `   📅 Last Activity: ${lastActivityStr}\n` +
-             `   ⏰ Days Since Activity: ${account.hasActivity ? account.daysSinceLastActivity : account.daysSinceCreation} days`;
-    }).join('\n\n');
-    
-    if (remainingCount > 0) {
-      result += `\n\n... and ${remainingCount} more accounts`;
-    }
-    
-    return result;
-  }
 
   private createCommunicationAlert(accounts: AccountActivity[]) {
     const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+    const avgAge = accounts.reduce((sum, acc) => sum + acc.daysSinceLastActivity, 0) / accounts.length;
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : process.env.NEXT_PUBLIC_BASE_URL 
+      ? process.env.NEXT_PUBLIC_BASE_URL
+      : 'https://your-app.vercel.app';
     
     return {
       text: "🔔 Account Communication Alert - 9 Month Dormancy",
@@ -58,7 +40,7 @@ export class SlackService {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*${accounts.length}* accounts have been dormant for 9+ months and need communication attempts.\n*Total Balance:* ${this.formatCurrency(totalBalance)}`
+            text: `*${accounts.length}* accounts have been dormant for 9+ months and need communication attempts.\n\n*Summary:*\n• Account Count: *${accounts.length}*\n• Total Balance: *${this.formatCurrency(totalBalance)}*\n• Average Dormancy: *${Math.round(avgAge)} days*`
           }
         },
         {
@@ -69,13 +51,10 @@ export class SlackService {
           }
         },
         {
-          type: "divider"
-        },
-        {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*Affected Accounts:*\n\n${this.formatAccountList(accounts)}`
+            text: `*📥 Download Report:*\n• <${baseUrl}/api/dormant-accounts?format=csv&type=communication|Warning List CSV>`
           }
         }
       ]
@@ -84,23 +63,27 @@ export class SlackService {
 
   private createClosureAlert(accounts: AccountActivity[]) {
     const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
-    
-    // Sort accounts by balance (highest first) to show most important ones
-    const sortedAccounts = accounts.sort((a, b) => b.balance - a.balance);
+    const avgAge = accounts.reduce((sum, acc) => sum + acc.daysSinceCreation, 0) / accounts.length;
+    const oldestAccount = Math.max(...accounts.map(acc => acc.daysSinceCreation));
     
     // Calculate statistics
     const activeAccounts = accounts.filter(acc => acc.hasActivity);
     const inactiveAccounts = accounts.filter(acc => !acc.hasActivity);
-    const maxAccountsToShow = accounts.length > 20 ? 5 : 10; // Show fewer if too many
+    
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : process.env.NEXT_PUBLIC_BASE_URL 
+      ? process.env.NEXT_PUBLIC_BASE_URL
+      : 'https://your-app.vercel.app';
 
-    let alertText = `*${accounts.length}* accounts are ready for closure.\n*Total Balance:* ${this.formatCurrency(totalBalance)}\n\n`;
+    let summaryText = `*${accounts.length}* accounts need immediate closure.\n\n*Summary:*\n• Account Count: *${accounts.length}*\n• Total Balance: *${this.formatCurrency(totalBalance)}*\n• Average Age: *${Math.round(avgAge)} days*\n• Oldest Account: *${oldestAccount} days*\n\n*Breakdown:*\n`;
     
     if (activeAccounts.length > 0) {
-      alertText += `*${activeAccounts.length}* accounts with previous activity (12+ months dormant)\n`;
+      summaryText += `• ${activeAccounts.length} accounts with previous activity (12+ months dormant)\n`;
     }
     
     if (inactiveAccounts.length > 0) {
-      alertText += `*${inactiveAccounts.length}* accounts with no activity (120+ days old)\n`;
+      summaryText += `• ${inactiveAccounts.length} accounts with no activity (120+ days old)`;
     }
 
     return {
@@ -117,7 +100,7 @@ export class SlackService {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: alertText
+            text: summaryText
           }
         },
         {
@@ -128,13 +111,10 @@ export class SlackService {
           }
         },
         {
-          type: "divider"
-        },
-        {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*Top ${maxAccountsToShow} Accounts by Balance:*\n\n${this.formatAccountList(sortedAccounts, maxAccountsToShow)}`
+            text: `*📥 Download Report:*\n• <${baseUrl}/api/dormant-accounts?format=csv&type=closure|Closure List CSV>`
           }
         }
       ]
@@ -189,12 +169,14 @@ export class SlackService {
       'Send communication attempts to all flagged accounts' :
       'Process closure for all flagged accounts';
 
+    const csvType = alert.type === 'communication_needed' ? 'communication' : 'closure';
+
     // Try to get the base URL from environment or use a fallback
     const baseUrl = process.env.VERCEL_URL 
       ? `https://${process.env.VERCEL_URL}` 
       : process.env.NEXT_PUBLIC_BASE_URL 
       ? process.env.NEXT_PUBLIC_BASE_URL
-      : 'https://your-app.vercel.app'; // You'll need to replace this with your actual URL
+      : 'https://your-app.vercel.app';
 
     const slackMessage = {
       text: `${alertTitle} - ${alert.accounts.length} Accounts`,
@@ -217,7 +199,7 @@ export class SlackService {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*Action Required:* ${actionText}\n\n📥 *Get Detailed Account List:*\n• <${baseUrl}/api/dormant-accounts?format=csv|Download CSV>\n• <${baseUrl}/api/dormant-accounts|View JSON Data>\n• <${baseUrl}|Open Dashboard>`
+            text: `*Action Required:* ${actionText}\n\n*📥 Download Report:*\n• <${baseUrl}/api/dormant-accounts?format=csv&type=${csvType}|${alert.type === 'communication_needed' ? 'Warning List CSV' : 'Closure List CSV'}>`
           }
         }
       ]
