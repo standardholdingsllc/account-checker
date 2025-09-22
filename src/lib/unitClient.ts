@@ -218,20 +218,10 @@ export class UnitApiClient {
     const accounts = await this.getAccounts();
     const accountActivities: AccountActivity[] = [];
 
-    // Load address mappings for company lookup
-    if (!this.addressMappingService.isLoaded()) {
-      console.log('Loading address mappings for employer identification...');
-      await this.addressMappingService.loadMappings();
-      const stats = this.addressMappingService.getStats();
-      console.log(`✅ Address mappings loaded: ${stats.totalMappings} addresses mapped to ${stats.totalCompanies} companies`);
-    }
+    console.log(`Processing ${accounts.length} accounts with proper transaction analysis...`);
 
-    console.log(`Processing ${accounts.length} accounts with transaction analysis and employer mapping...`);
-
-    // Track customer API health to make feature optional
-    let customerApiHealthy = true;
-    let customerApiFailures = 0;
-    const MAX_CUSTOMER_API_FAILURES = 10; // Stop customer calls after this many failures
+    // TEMPORARILY DISABLE ADDRESS MAPPING TO ISOLATE TRANSACTION ANALYSIS ISSUE
+    // TODO: Re-enable address mapping once core functionality is verified correct
     
     for (let i = 0; i < accounts.length; i++) {
       const account = accounts[i];
@@ -242,61 +232,18 @@ export class UnitApiClient {
           console.log(`Processing account ${i + 1}/${accounts.length}: ${account.id} (${account.attributes.status})`);
         }
         
+        // Use simplified identifiers (customer API may still have issues)
+        const customerName = `Account ${account.id}`;
+        const customerEmail: string | undefined = undefined;
         const customerId = account.relationships.customer.data.id;
-        
-        // *** CORE TRANSACTION ANALYSIS (CRITICAL - MUST NOT FAIL) ***
-        // Get account transactions to determine activity - this is the core functionality
-        const transactions = await this.getAccountTransactions(account.id, 1);
-        
-        // Set up defaults for customer info
-        let customerName = `Account ${account.id}`;
-        let customerEmail: string | undefined = undefined;
-        let customerAddress: string | undefined = undefined;
-        let companyName: string | undefined = undefined;
-        let companyId: number | string | undefined = undefined;
-        
-        // *** OPTIONAL CUSTOMER/ADDRESS MAPPING (CAN FAIL WITHOUT AFFECTING CORE) ***
-        if (customerApiHealthy && customerApiFailures < MAX_CUSTOMER_API_FAILURES) {
-          try {
-            // Add extra throttling for customer API calls to prevent rate limiting
-            if (i > 0 && i % 50 === 0) {
-              await new Promise(resolve => setTimeout(resolve, 100)); // Extra 100ms delay every 50 accounts
-            }
-            
-            // Only call customer API if it's still healthy and we want address mapping
-            const customer = await this.getCustomer(customerId);
-            if (customer?.attributes) {
-              // Use actual customer name if available
-              const fullName = customer.attributes.fullName;
-              customerName = `${fullName.first} ${fullName.last}`.trim();
-              customerEmail = customer.attributes.email;
-              
-              // Format and map customer address to company
-              customerAddress = this.formatCustomerAddress(customer);
-              if (customerAddress) {
-                companyName = this.addressMappingService.getCompanyName(customerAddress) || undefined;
-                companyId = this.addressMappingService.getCompanyId(customerAddress) || undefined;
-                
-                // Log successful mapping for debugging (only first few)
-                if (i < 10 && companyName) {
-                  console.log(`✅ Address mapped: "${customerAddress}" → ${companyName}`);
-                }
-              }
-            }
-          } catch (customerError) {
-            customerApiFailures++;
-            if (customerApiFailures >= MAX_CUSTOMER_API_FAILURES) {
-              customerApiHealthy = false;
-              console.warn(`⚠️ Customer API unhealthy after ${customerApiFailures} failures - disabling address mapping to preserve core functionality`);
-            }
-            // Continue processing without customer data - core functionality preserved
-          }
-        }
         
         // Log API status once every 1000 accounts
         if (i % 1000 === 0 && i < 3000) {
-          console.log(`API Status: Transaction analysis=OK, Customer API=${customerApiHealthy ? 'OK' : 'DISABLED'}, Address mapping=${customerApiHealthy ? 'ENABLED' : 'DISABLED'}`);
+          console.log(`API Status: Using transaction data for accurate dormancy detection`);
         }
+        
+        // Get account transactions to determine activity
+        const transactions = await this.getAccountTransactions(account.id, 1);
         
         const accountCreated = parseISO(account.attributes.createdAt);
         const hasActivity = transactions.length > 0;
@@ -315,9 +262,6 @@ export class UnitApiClient {
           customerId: customerId,
           customerName,
           customerEmail,
-          customerAddress,
-          companyName,
-          companyId,
           accountCreated,
           lastActivity,
           hasActivity,
@@ -341,18 +285,6 @@ export class UnitApiClient {
     }
 
     console.log(`Successfully processed ${accountActivities.length} accounts with transaction data`);
-    
-    // Report address mapping success rate
-    const accountsWithCompanyMapping = accountActivities.filter(acc => acc.companyName && acc.companyName !== 'Unknown').length;
-    const mappingSuccessRate = accountActivities.length > 0 ? Math.round((accountsWithCompanyMapping / accountActivities.length) * 100) : 0;
-    
-    console.log(`📊 Address mapping results: ${accountsWithCompanyMapping}/${accountActivities.length} accounts mapped to companies (${mappingSuccessRate}% success rate)`);
-    console.log(`📊 Customer API status: ${customerApiHealthy ? 'Healthy' : 'Disabled'} (${customerApiFailures} failures)`);
-    
-    if (!customerApiHealthy) {
-      console.log(`ℹ️  Address mapping was disabled due to API issues, but core dormancy detection completed successfully`);
-    }
-    
     return accountActivities;
   }
 
