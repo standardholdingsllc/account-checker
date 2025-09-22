@@ -239,9 +239,6 @@ export class UnitApiClient {
     const accountActivities: AccountActivity[] = [];
 
     console.log(`Processing ${accounts.length} accounts with proper transaction analysis...`);
-
-    // TEMPORARILY DISABLE ADDRESS MAPPING TO ISOLATE TRANSACTION ANALYSIS ISSUE
-    // TODO: Re-enable address mapping once core functionality is verified correct
     
     for (let i = 0; i < accounts.length; i++) {
       const account = accounts[i];
@@ -423,7 +420,15 @@ export class UnitApiClient {
     const coreAccounts = await this.getAllAccountsWithActivity();
     
     // PHASE 2: Optional address mapping enhancement (completely separate)
-    const allAccounts = await this.enhanceAccountsWithAddressMapping(coreAccounts);
+    console.log(`🔄 Starting Phase 2: Address enhancement for ${coreAccounts.length} accounts...`);
+    let allAccounts: AccountActivity[];
+    try {
+      allAccounts = await this.enhanceAccountsWithAddressMapping(coreAccounts);
+      console.log(`✅ Phase 2 completed successfully`);
+    } catch (error) {
+      console.error(`❌ Phase 2 failed, using core accounts without enhancement:`, error);
+      allAccounts = coreAccounts; // Fallback to core accounts
+    }
 
     const communicationNeeded: AccountActivity[] = [];
     const closureNeeded: AccountActivity[] = [];
