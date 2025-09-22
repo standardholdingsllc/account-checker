@@ -83,35 +83,102 @@ export class AddressMappingService {
 
     const normalizedInput = this.normalizeAddress(customerAddress);
     
-    // First try exact match (case-insensitive)
+    // Strategy 1: Try exact match (case-insensitive)
     for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
       if (this.normalizeAddress(mappedAddress) === normalizedInput) {
         return mapping['Company Name'];
       }
     }
 
-    // Try partial matches - check if customer address contains any mapped address
+    // Strategy 2: Extract street address from full address and try exact match
+    // Customer might have "548 Pleasant Mill Rd Charlotte NC 28203" but mapping has "548 Pleasant Mill Rd"
+    const streetOnlyAddress = this.extractStreetAddress(customerAddress);
+    if (streetOnlyAddress && streetOnlyAddress !== customerAddress) {
+      const normalizedStreetOnly = this.normalizeAddress(streetOnlyAddress);
+      for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
+        if (this.normalizeAddress(mappedAddress) === normalizedStreetOnly) {
+          return mapping['Company Name'];
+        }
+      }
+    }
+
+    // Strategy 3: Try partial matches - check if customer address starts with mapped address
     for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
       const normalizedMapped = this.normalizeAddress(mappedAddress);
-      if (normalizedInput.includes(normalizedMapped) || normalizedMapped.includes(normalizedInput)) {
+      if (normalizedInput.startsWith(normalizedMapped) || normalizedMapped.startsWith(normalizedInput)) {
         return mapping['Company Name'];
       }
     }
 
-    // Try address component matching (street number + street name)
+    // Strategy 4: Try address component matching (street number + street name)
     const addressParts = normalizedInput.split(' ');
     if (addressParts.length >= 2) {
       const streetInfo = addressParts.slice(0, 3).join(' '); // First 3 parts usually contain street info
       
       for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
         const normalizedMapped = this.normalizeAddress(mappedAddress);
-        if (normalizedMapped.includes(streetInfo) || streetInfo.includes(normalizedMapped.split(' ').slice(0, 3).join(' '))) {
+        const mappedParts = normalizedMapped.split(' ');
+        const mappedStreetInfo = mappedParts.slice(0, 3).join(' ');
+        
+        if (streetInfo === mappedStreetInfo) {
           return mapping['Company Name'];
         }
       }
     }
 
     return null; // No match found
+  }
+
+  /**
+   * Extract street address from full address
+   * "548 Pleasant Mill Rd Charlotte NC 28203" -> "548 Pleasant Mill Rd"
+   */
+  private extractStreetAddress(fullAddress: string): string | null {
+    if (!fullAddress) return null;
+    
+    const parts = fullAddress.trim().split(/\s+/);
+    if (parts.length < 2) return null;
+    
+    // Common patterns to detect where street address ends
+    // Look for state abbreviations, zip codes, or common city indicators
+    const statePattern = /^[A-Z]{2}$/; // Two letter state codes
+    const zipPattern = /^\d{5}(-\d{4})?$/; // ZIP codes
+    
+    let streetEndIndex = parts.length;
+    
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      
+      // If we find a state abbreviation or ZIP code, street address ends before it
+      if (statePattern.test(part) || zipPattern.test(part)) {
+        streetEndIndex = i;
+        break;
+      }
+      
+      // If we find a part that looks like a city (starts with capital, not a street suffix)
+      // and is followed by a state/zip, assume street address ends before it
+      if (i < parts.length - 2 && 
+          part[0] === part[0].toUpperCase() && 
+          !this.isStreetSuffix(part) &&
+          (statePattern.test(parts[i + 1]) || zipPattern.test(parts[i + 2]))) {
+        streetEndIndex = i;
+        break;
+      }
+    }
+    
+    // Take first part up to where we think the street ends
+    const streetParts = parts.slice(0, streetEndIndex);
+    return streetParts.length > 0 ? streetParts.join(' ') : null;
+  }
+
+  /**
+   * Check if a word is a common street suffix
+   */
+  private isStreetSuffix(word: string): boolean {
+    const suffixes = ['st', 'street', 'ave', 'avenue', 'rd', 'road', 'dr', 'drive', 
+                     'ln', 'lane', 'ct', 'court', 'pl', 'place', 'way', 'blvd', 
+                     'boulevard', 'hwy', 'highway', 'pkwy', 'parkway', 'nw', 'ne', 'sw', 'se'];
+    return suffixes.includes(word.toLowerCase());
   }
 
   /**

@@ -203,15 +203,29 @@ export class UnitApiClient {
     }
 
     const addr = customer.attributes.address;
-    const parts = [
+    
+    // Format address to match the JSON mapping style (street address only, like "548 Pleasant Mill Rd")
+    // Your JSON has addresses like: "1000 Shelton Rd NW", "548 Pleasant Mill Rd", "6017 N US Hwy 19E"
+    const streetParts = [
+      addr.street,
+      addr.street2
+    ].filter(Boolean);
+    
+    const streetAddress = streetParts.length > 0 ? streetParts.join(' ') : undefined;
+    
+    // Also create a full address for fallback matching
+    const fullParts = [
       addr.street,
       addr.street2,
       addr.city,
       addr.state,
       addr.postalCode
     ].filter(Boolean);
-
-    return parts.length > 0 ? parts.join(' ') : undefined;
+    
+    const fullAddress = fullParts.length > 0 ? fullParts.join(' ') : undefined;
+    
+    // Return street address first (matches JSON format better), fallback to full address
+    return streetAddress || fullAddress;
   }
 
   async getAllAccountsWithActivity(): Promise<AccountActivity[]> {
@@ -342,9 +356,26 @@ export class UnitApiClient {
               account.companyName = this.addressMappingService.getCompanyName(account.customerAddress) || undefined;
               account.companyId = this.addressMappingService.getCompanyId(account.customerAddress) || undefined;
               
-              // Log successful mapping for first few
-              if (i < 5 && account.companyName) {
+              // Enhanced debugging for first 10 addresses to understand why mapping fails
+              if (i < 10) {
+                console.log(`🔍 Debug mapping attempt ${i + 1}:`);
+                console.log(`  Raw address: "${account.customerAddress}"`);
+                console.log(`  Mapped company: ${account.companyName || 'NO MATCH'}`);
+                
+                if (!account.companyName) {
+                  // Show some sample addresses from mapping for comparison
+                  const stats = this.addressMappingService.getStats();
+                  console.log(`  Sample mapping addresses: ${stats.sampleAddresses.slice(0, 3).join(', ')}`);
+                }
+              }
+              
+              // Log successful mapping
+              if (account.companyName) {
                 console.log(`✅ Address mapped: "${account.customerAddress}" → ${account.companyName}`);
+              }
+            } else {
+              if (i < 10) {
+                console.log(`🔍 Debug: Account ${account.accountId} has no address in customer data`);
               }
             }
           }
