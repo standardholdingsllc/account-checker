@@ -250,8 +250,8 @@ export class UnitApiClient {
           // Format and map customer address to company
           customerAddress = this.formatCustomerAddress(customer);
           if (customerAddress) {
-            companyName = this.addressMappingService.getCompanyName(customerAddress);
-            companyId = this.addressMappingService.getCompanyId(customerAddress);
+            companyName = this.addressMappingService.getCompanyName(customerAddress) || undefined;
+            companyId = this.addressMappingService.getCompanyId(customerAddress) || undefined;
             
             // Log successful mapping for debugging (only first few)
             if (i < 10 && companyName) {
