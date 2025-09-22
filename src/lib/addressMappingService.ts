@@ -28,12 +28,17 @@ export class AddressMappingService {
       });
       
       this.mappings = response.data;
-      const mappingCount = Object.keys(this.mappings!).length;
-      console.log(`✅ Successfully loaded ${mappingCount} address mappings`);
-      
-      // Show first few mappings for debugging
-      const firstFewMappings = Object.entries(this.mappings).slice(0, 5);
-      console.log(`🔍 Sample mappings:`, firstFewMappings.map(([addr, mapping]) => `"${addr}" -> "${mapping['Company Name']}"`).join(', '));
+      if (this.mappings) {
+        const mappingCount = Object.keys(this.mappings).length;
+        console.log(`✅ Successfully loaded ${mappingCount} address mappings`);
+        
+        // Show first few mappings for debugging
+        const firstFewMappings = Object.entries(this.mappings).slice(0, 5);
+        console.log(`🔍 Sample mappings:`, firstFewMappings.map(([addr, mapping]) => `"${addr}" -> "${mapping['Company Name']}"`).join(', '));
+      } else {
+        console.warn('⚠️ Loaded mappings but data is null');
+        this.mappings = {};
+      }
     } catch (error) {
       console.error('❌ Failed to load address mappings:', error);
       // Initialize with empty mappings to prevent crashes
