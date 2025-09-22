@@ -123,12 +123,20 @@ export class DormancyService {
       }, {} as Record<string, number>);
 
       const communicationSoon = allAccounts.filter(account => {
+        // Skip closed or frozen accounts from upcoming alerts
+        if (account.status === 'Closed' || account.status === 'Frozen') {
+          return false;
+        }
         return account.hasActivity && 
                account.daysSinceLastActivity >= 240 && // 8 months
                account.daysSinceLastActivity < 270;    // but less than 9 months
       });
 
       const closureSoon = allAccounts.filter(account => {
+        // Skip closed or frozen accounts from upcoming alerts
+        if (account.status === 'Closed' || account.status === 'Frozen') {
+          return false;
+        }
         if (account.hasActivity) {
           return account.daysSinceLastActivity >= 330 && // 11 months
                  account.daysSinceLastActivity < 365;    // but less than 12 months

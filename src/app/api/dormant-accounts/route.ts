@@ -63,6 +63,42 @@ export async function GET(request: NextRequest) {
     const avgAge = allDormantAccounts.length > 0 ? 
       allDormantAccounts.reduce((sum, acc) => sum + acc.daysSinceCreation, 0) / allDormantAccounts.length : 0;
 
+    // Calculate employer analytics
+    const employerStats = allDormantAccounts.reduce((stats, account) => {
+      const company = account.companyName || 'Unknown';
+      if (!stats[company]) {
+        stats[company] = {
+          companyName: company,
+          accountCount: 0,
+          totalBalance: 0,
+          accounts: []
+        };
+      }
+      stats[company].accountCount++;
+      stats[company].totalBalance += account.balance;
+      stats[company].accounts.push({
+        accountId: account.accountId,
+        customerName: account.customerName,
+        balance: account.balance
+      });
+      return stats;
+    }, {} as Record<string, {
+      companyName: string;
+      accountCount: number;
+      totalBalance: number;
+      accounts: Array<{accountId: string; customerName: string; balance: number}>;
+    }>);
+
+    // Sort employers by account count (most dormant accounts first)
+    const employersByCount = Object.values(employerStats)
+      .sort((a, b) => b.accountCount - a.accountCount)
+      .slice(0, 10); // Top 10
+
+    // Sort employers by total balance (highest balance first)
+    const employersByBalance = Object.values(employerStats)
+      .sort((a, b) => b.totalBalance - a.totalBalance)
+      .slice(0, 10); // Top 10
+
     // Sort by balance (highest first) for prioritization
     const sortedAccounts = allDormantAccounts.sort((a, b) => b.balance - a.balance);
 
@@ -72,6 +108,9 @@ export async function GET(request: NextRequest) {
       accountId: account.accountId,
       customerId: account.customerId,
       customerName: account.customerName,
+      customerEmail: account.customerEmail || '',
+      customerAddress: account.customerAddress || '',
+      companyName: account.companyName || 'Unknown',
       balance: account.balance,
       balanceFormatted: new Intl.NumberFormat('en-US', {
         style: 'currency',
@@ -98,6 +137,9 @@ export async function GET(request: NextRequest) {
         'Account ID',
         'Customer ID', 
         'Customer Name',
+        'Customer Email',
+        'Customer Address',
+        'Company Name',
         'Balance (USD)',
         'Has Activity',
         'Days Since Creation',
@@ -113,6 +155,9 @@ export async function GET(request: NextRequest) {
         account.accountId,
         account.customerId,
         `"${account.customerName}"`, // Quote customer names in case of commas
+        `"${account.customerEmail}"`,
+        `"${account.customerAddress}"`,
+        `"${account.companyName}"`,
         account.balanceFormatted.replace('$', '').replace(',', ''), // Remove formatting for CSV
         account.hasActivity ? 'Yes' : 'No',
         account.daysSinceCreation,
@@ -152,6 +197,27 @@ export async function GET(request: NextRequest) {
         oldestAccount: allDormantAccounts.length > 0 ? 
           Math.max(...allDormantAccounts.map(acc => acc.daysSinceCreation)) : 0,
         timestamp: new Date().toISOString()
+      },
+      employerAnalytics: {
+        totalCompanies: Object.keys(employerStats).length,
+        topEmployersByCount: employersByCount.map(emp => ({
+          companyName: emp.companyName,
+          dormantAccountCount: emp.accountCount,
+          totalBalanceFormatted: new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD'
+          }).format(emp.totalBalance / 100),
+          sampleAccounts: emp.accounts.slice(0, 3) // First 3 accounts as samples
+        })),
+        topEmployersByBalance: employersByBalance.map(emp => ({
+          companyName: emp.companyName,
+          dormantAccountCount: emp.accountCount,
+          totalBalance: emp.totalBalance,
+          totalBalanceFormatted: new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD'
+          }).format(emp.totalBalance / 100)
+        }))
       },
       accounts: accountList,
       downloadUrls: {

@@ -3,11 +3,13 @@ import {
   UnitApiConfig,
   UnitAccount,
   UnitTransaction,
+  UnitCustomer,
   UnitApiListResponse,
   UnitApiResponse,
   AccountActivity,
 } from '@/types/unit';
 import { differenceInDays, parseISO } from 'date-fns';
+import { AddressMappingService } from './addressMappingService';
 
 /**
  * Unit.co API Client following official best practices
@@ -21,6 +23,7 @@ import { differenceInDays, parseISO } from 'date-fns';
  */
 export class UnitApiClient {
   private client: AxiosInstance;
+  private addressMappingService: AddressMappingService;
 
   constructor(config: UnitApiConfig) {
     this.client = axios.create({
@@ -64,6 +67,9 @@ export class UnitApiClient {
         return Promise.reject(error);
       }
     );
+
+    // Initialize address mapping service
+    this.addressMappingService = new AddressMappingService();
   }
 
   async getAccounts(limit = 100, offset = 0): Promise<UnitAccount[]> {
@@ -157,11 +163,64 @@ export class UnitApiClient {
     }
   }
 
+  async getCustomer(customerId: string): Promise<UnitCustomer | null> {
+    try {
+      const response: AxiosResponse<UnitApiResponse<UnitCustomer>> = await this.client.get(
+        `/customers/${customerId}`
+      );
+      return response.data.data;
+    } catch (error) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number, data?: any } };
+        if (axiosError.response?.status === 404) {
+          console.warn(`Customer ${customerId} not found (404)`);
+          return null;
+        } else if (axiosError.response?.status === 403) {
+          console.warn(`Customer API 403 for ${customerId} - missing customers:read permission`);
+          return null;
+        } else {
+          console.error(`Customer API Error for ${customerId}:`, {
+            status: axiosError.response?.status,
+            data: axiosError.response?.data
+          });
+        }
+      } else {
+        console.error(`Unexpected customer API error for ${customerId}:`, error);
+      }
+      return null;
+    }
+  }
+
+  private formatCustomerAddress(customer: UnitCustomer | null): string | undefined {
+    if (!customer?.attributes?.address) {
+      return undefined;
+    }
+
+    const addr = customer.attributes.address;
+    const parts = [
+      addr.street,
+      addr.street2,
+      addr.city,
+      addr.state,
+      addr.postalCode
+    ].filter(Boolean);
+
+    return parts.length > 0 ? parts.join(' ') : undefined;
+  }
+
   async getAllAccountsWithActivity(): Promise<AccountActivity[]> {
     const accounts = await this.getAccounts();
     const accountActivities: AccountActivity[] = [];
 
-    console.log(`Processing ${accounts.length} accounts with proper transaction analysis...`);
+    // Load address mappings for company lookup
+    if (!this.addressMappingService.isLoaded()) {
+      console.log('Loading address mappings for employer identification...');
+      await this.addressMappingService.loadMappings();
+      const stats = this.addressMappingService.getStats();
+      console.log(`✅ Address mappings loaded: ${stats.totalMappings} addresses mapped to ${stats.totalCompanies} companies`);
+    }
+
+    console.log(`Processing ${accounts.length} accounts with transaction analysis and employer mapping...`);
 
     for (let i = 0; i < accounts.length; i++) {
       const account = accounts[i];
@@ -172,10 +231,34 @@ export class UnitApiClient {
           console.log(`Processing account ${i + 1}/${accounts.length}: ${account.id} (${account.attributes.status})`);
         }
         
-        // Use simplified identifiers (customer API may still have issues)
-        const customerName = `Account ${account.id}`;
-        const customerEmail: string | undefined = undefined;
         const customerId = account.relationships.customer.data.id;
+        
+        // Fetch customer details for address mapping
+        let customerName = `Account ${account.id}`;
+        let customerEmail: string | undefined = undefined;
+        let customerAddress: string | undefined = undefined;
+        let companyName: string | undefined = undefined;
+        let companyId: number | string | undefined = undefined;
+        
+        const customer = await this.getCustomer(customerId);
+        if (customer?.attributes) {
+          // Use actual customer name if available
+          const fullName = customer.attributes.fullName;
+          customerName = `${fullName.first} ${fullName.last}`.trim();
+          customerEmail = customer.attributes.email;
+          
+          // Format and map customer address to company
+          customerAddress = this.formatCustomerAddress(customer);
+          if (customerAddress) {
+            companyName = this.addressMappingService.getCompanyName(customerAddress);
+            companyId = this.addressMappingService.getCompanyId(customerAddress);
+            
+            // Log successful mapping for debugging (only first few)
+            if (i < 10 && companyName) {
+              console.log(`✅ Address mapped: "${customerAddress}" → ${companyName}`);
+            }
+          }
+        }
         
         // Log API status once every 1000 accounts
         if (i % 1000 === 0 && i < 3000) {
@@ -202,6 +285,9 @@ export class UnitApiClient {
           customerId: customerId,
           customerName,
           customerEmail,
+          customerAddress,
+          companyName,
+          companyId,
           accountCreated,
           lastActivity,
           hasActivity,
@@ -239,6 +325,20 @@ export class UnitApiClient {
 
     console.log(`Analyzing ${allAccounts.length} accounts for dormancy...`);
 
+    // Count accounts by status for filtering transparency
+    const statusCounts = allAccounts.reduce((acc, account) => {
+      acc[account.status] = (acc[account.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const closedCount = statusCounts['Closed'] || 0;
+    const frozenCount = statusCounts['Frozen'] || 0;
+    const filteredOutCount = closedCount + frozenCount;
+    const eligibleCount = allAccounts.length - filteredOutCount;
+    
+    console.log(`Account status breakdown: Open=${statusCounts['Open'] || 0}, Frozen=${frozenCount}, Closed=${closedCount}`);
+    console.log(`Filtering out ${filteredOutCount} accounts (${closedCount} closed + ${frozenCount} frozen), analyzing ${eligibleCount} eligible accounts`);
+
     // Safety check: Verify transaction API is working properly
     const accountsWithActivity = allAccounts.filter(acc => acc.hasActivity);
     const activityRate = accountsWithActivity.length / allAccounts.length;
@@ -254,8 +354,8 @@ export class UnitApiClient {
     }
 
     for (const account of allAccounts) {
-      // Skip closed accounts for dormancy analysis
-      if (account.status === 'Closed') {
+      // Skip closed or frozen accounts for dormancy analysis
+      if (account.status === 'Closed' || account.status === 'Frozen') {
         continue;
       }
 

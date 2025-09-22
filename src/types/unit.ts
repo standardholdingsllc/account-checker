@@ -62,6 +62,14 @@ export interface UnitCustomer {
       countryCode: string;
       number: string;
     };
+    address?: {
+      street: string;
+      street2?: string;
+      city: string;
+      state: string;
+      postalCode: string;
+      country?: string;
+    };
     status: string;
     tags?: Record<string, string>;
   };
@@ -94,6 +102,9 @@ export interface AccountActivity {
   customerId: string;
   customerName: string;
   customerEmail?: string;
+  customerAddress?: string;
+  companyName?: string;
+  companyId?: number | string;
   accountCreated: Date;
   lastActivity?: Date;
   hasActivity: boolean;
