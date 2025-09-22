@@ -139,7 +139,10 @@ export class UnitApiClient {
       const response: AxiosResponse<UnitApiListResponse<UnitTransaction>> = await this.client.get(
         `/transactions?filter[accountId]=${accountId}&page[limit]=${limit}&page[offset]=${offset}&sort=-createdAt`
       );
-      console.log(`✅ Successfully fetched ${response.data.data.length} transactions for account ${accountId}`);
+      // Only log transaction fetches for debugging (reduce log spam)
+      if (Math.random() < 0.01) { // Log ~1% of successful transaction fetches
+        console.log(`✅ Successfully fetched ${response.data.data.length} transactions for account ${accountId}`);
+      }
       return response.data.data;
     } catch (error) {
       if (error && typeof error === 'object' && 'response' in error) {
@@ -244,9 +247,9 @@ export class UnitApiClient {
       const account = accounts[i];
       
       try {
-        // Log progress every 100 accounts to reduce log spam
-        if (i % 100 === 0 || i < 20) {
-          console.log(`Processing account ${i + 1}/${accounts.length}: ${account.id} (${account.attributes.status})`);
+        // Log progress every 1000 accounts to reduce log spam
+        if (i % 1000 === 0) {
+          console.log(`🔄 Processing account ${i + 1}/${accounts.length}: ${account.id} (${account.attributes.status})`);
         }
         
         // Use simplified identifiers (customer API may still have issues)
@@ -254,9 +257,9 @@ export class UnitApiClient {
         const customerEmail: string | undefined = undefined;
         const customerId = account.relationships.customer.data.id;
         
-        // Log API status once every 1000 accounts
-        if (i % 1000 === 0 && i < 3000) {
-          console.log(`API Status: Using transaction data for accurate dormancy detection`);
+        // Log API status once every 2000 accounts
+        if (i % 2000 === 0) {
+          console.log(`📊 API Status: Using transaction data for accurate dormancy detection (${i}/${accounts.length})`);
         }
         
         // Get account transactions to determine activity
@@ -295,13 +298,14 @@ export class UnitApiClient {
           await new Promise(resolve => setTimeout(resolve, 10));
         }
       } catch (error) {
-        console.error(`Error processing account ${account.id}:`, error);
-        // Continue with other accounts even if one fails
+        console.error(`❌ Error processing account ${account.id}:`, error);
+        // Continue with other accounts even if one fails - don't let one account break everything
         continue;
       }
     }
 
-    console.log(`Successfully processed ${accountActivities.length} accounts with transaction data`);
+    console.log(`✅ Phase 1 COMPLETE: Successfully processed ${accountActivities.length} accounts with transaction data`);
+    console.log(`🔄 Phase 1 Summary: ${accounts.length} total accounts processed, ${accountActivities.length} account records created`);
     return accountActivities;
   }
 
@@ -311,7 +315,12 @@ export class UnitApiClient {
    * This is completely separate from core transaction analysis and can fail without affecting core functionality
    */
   async enhanceAccountsWithAddressMapping(accounts: AccountActivity[]): Promise<AccountActivity[]> {
-    console.log(`🔄 Phase 2: Enhancing ${accounts.length} accounts with address mapping...`);
+    console.log(`🚀 PHASE 2 STARTED: Enhancing ${accounts.length} accounts with address mapping...`);
+    
+    if (accounts.length === 0) {
+      console.log(`⚠️ No accounts to enhance - returning empty array`);
+      return accounts;
+    }
     
     // Load address mappings
     if (!this.addressMappingService.isLoaded()) {
@@ -423,11 +432,18 @@ export class UnitApiClient {
     console.log(`🔄 Starting Phase 2: Address enhancement for ${coreAccounts.length} accounts...`);
     let allAccounts: AccountActivity[];
     try {
-      allAccounts = await this.enhanceAccountsWithAddressMapping(coreAccounts);
-      console.log(`✅ Phase 2 completed successfully`);
+      // Add timeout protection for Phase 2 - don't let it hang forever
+      const enhancementPromise = this.enhanceAccountsWithAddressMapping(coreAccounts);
+      const timeoutPromise = new Promise<AccountActivity[]>((_, reject) => {
+        setTimeout(() => reject(new Error('Phase 2 timeout after 5 minutes')), 5 * 60 * 1000);
+      });
+      
+      allAccounts = await Promise.race([enhancementPromise, timeoutPromise]);
+      console.log(`✅ Phase 2 completed successfully with enhanced data`);
     } catch (error) {
-      console.error(`❌ Phase 2 failed, using core accounts without enhancement:`, error);
-      allAccounts = coreAccounts; // Fallback to core accounts
+      console.error(`❌ Phase 2 failed, using core accounts without enhancement:`, error instanceof Error ? error.message : error);
+      allAccounts = coreAccounts; // Fallback to core accounts - system continues working
+      console.log(`🔄 Continuing with ${allAccounts.length} core accounts (no address enhancement)`);
     }
 
     const communicationNeeded: AccountActivity[] = [];
