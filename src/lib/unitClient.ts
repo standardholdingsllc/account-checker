@@ -427,51 +427,34 @@ export class UnitApiClient {
     // PHASE 1: Core transaction analysis (working perfectly - don't touch!)
     console.log(`🔄 Phase 1: Core transaction analysis...`);
     const coreAccounts = await this.getAllAccountsWithActivity();
-    
-    // PHASE 2: Optional address mapping enhancement (completely separate)
-    console.log(`🔄 Starting Phase 2: Address enhancement for ${coreAccounts.length} accounts...`);
-    let allAccounts: AccountActivity[];
-    try {
-      // Add timeout protection for Phase 2 - don't let it hang forever
-      const enhancementPromise = this.enhanceAccountsWithAddressMapping(coreAccounts);
-      const timeoutPromise = new Promise<AccountActivity[]>((_, reject) => {
-        setTimeout(() => reject(new Error('Phase 2 timeout after 5 minutes')), 5 * 60 * 1000);
-      });
-      
-      allAccounts = await Promise.race([enhancementPromise, timeoutPromise]);
-      console.log(`✅ Phase 2 completed successfully with enhanced data`);
-    } catch (error) {
-      console.error(`❌ Phase 2 failed, using core accounts without enhancement:`, error instanceof Error ? error.message : error);
-      allAccounts = coreAccounts; // Fallback to core accounts - system continues working
-      console.log(`🔄 Continuing with ${allAccounts.length} core accounts (no address enhancement)`);
-    }
 
+    // Now perform filtering on coreAccounts before enhancement
     const communicationNeeded: AccountActivity[] = [];
     const closureNeeded: AccountActivity[] = [];
 
-    console.log(`Analyzing ${allAccounts.length} accounts for dormancy...`);
+    console.log(`Analyzing ${coreAccounts.length} accounts for dormancy...`);
 
     // Count accounts by status for filtering transparency
-    const statusCounts = allAccounts.reduce((acc, account) => {
+    const statusCounts = coreAccounts.reduce((acc, account) => {
       acc[account.status] = (acc[account.status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    
+
     const closedCount = statusCounts['Closed'] || 0;
     const frozenCount = statusCounts['Frozen'] || 0;
     const filteredOutCount = closedCount + frozenCount;
-    const eligibleCount = allAccounts.length - filteredOutCount;
-    
+    const eligibleCount = coreAccounts.length - filteredOutCount;
+
     console.log(`Account status breakdown: Open=${statusCounts['Open'] || 0}, Frozen=${frozenCount}, Closed=${closedCount}`);
     console.log(`Filtering out ${filteredOutCount} accounts (${closedCount} closed + ${frozenCount} frozen), analyzing ${eligibleCount} eligible accounts`);
 
     // Safety check: Verify transaction API is working properly
-    const accountsWithActivity = allAccounts.filter(acc => acc.hasActivity);
-    const activityRate = accountsWithActivity.length / allAccounts.length;
-    
-    console.log(`Activity detection stats: ${accountsWithActivity.length}/${allAccounts.length} accounts show activity (${Math.round(activityRate * 100)}%)`);
-    
-    if (activityRate < 0.05 && allAccounts.length > 1000) { // Less than 5% activity rate in very large dataset
+    const accountsWithActivity = coreAccounts.filter(acc => acc.hasActivity);
+    const activityRate = accountsWithActivity.length / coreAccounts.length;
+
+    console.log(`Activity detection stats: ${accountsWithActivity.length}/${coreAccounts.length} accounts show activity (${Math.round(activityRate * 100)}%)`);
+
+    if (activityRate < 0.05 && coreAccounts.length > 1000) { // Less than 5% activity rate in very large dataset
       console.warn(`⚠️ WARNING: Only ${Math.round(activityRate * 100)}% of accounts show transaction activity`);
       console.warn(`⚠️ This seems unusually low - please verify results manually`);
       console.warn(`⚠️ If incorrect, check transaction API permissions: transactions:read`);
@@ -479,7 +462,7 @@ export class UnitApiClient {
       console.log(`✅ Transaction API working correctly (${Math.round(activityRate * 100)}% activity rate)`);
     }
 
-    for (const account of allAccounts) {
+    for (const account of coreAccounts) {
       // Skip closed or frozen accounts for dormancy analysis
       if (account.status === 'Closed' || account.status === 'Frozen') {
         continue;
@@ -506,7 +489,13 @@ export class UnitApiClient {
       }
     }
 
-    console.log(`Dormancy analysis complete: ${communicationNeeded.length} need communication, ${closureNeeded.length} need closure`);
-    return { communicationNeeded, closureNeeded };
+    // Now enhance only the filtered dormant accounts
+    console.log(`🔄 Starting Phase 2: Address enhancement for ${communicationNeeded.length + closureNeeded.length} dormant accounts...`);
+
+    const enhancedCommunication = await this.enhanceAccountsWithAddressMapping(communicationNeeded);
+    const enhancedClosure = await this.enhanceAccountsWithAddressMapping(closureNeeded);
+
+    console.log(`Dormancy analysis complete: ${enhancedCommunication.length} need communication, ${enhancedClosure.length} need closure`);
+    return { communicationNeeded: enhancedCommunication, closureNeeded: enhancedClosure };
   }
 }
