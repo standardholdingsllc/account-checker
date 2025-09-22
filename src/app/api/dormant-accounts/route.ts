@@ -90,12 +90,22 @@ export async function GET(request: NextRequest) {
     }>);
 
     // Sort employers by account count (most dormant accounts first)
-    const employersByCount = Object.values(employerStats)
+    const employersByCount = (Object.values(employerStats) as Array<{
+      companyName: string;
+      accountCount: number;
+      totalBalance: number;
+      accounts: Array<{accountId: string; customerName: string; balance: number}>;
+    }>)
       .sort((a, b) => b.accountCount - a.accountCount)
       .slice(0, 10); // Top 10
 
     // Sort employers by total balance (highest balance first)
-    const employersByBalance = Object.values(employerStats)
+    const employersByBalance = (Object.values(employerStats) as Array<{
+      companyName: string;
+      accountCount: number;
+      totalBalance: number;
+      accounts: Array<{accountId: string; customerName: string; balance: number}>;
+    }>)
       .sort((a, b) => b.totalBalance - a.totalBalance)
       .slice(0, 10); // Top 10
 
