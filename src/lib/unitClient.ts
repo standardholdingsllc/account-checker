@@ -288,11 +288,105 @@ export class UnitApiClient {
     return accountActivities;
   }
 
+  /**
+   * PHASE 2: Optional address mapping enhancement
+   * Takes existing AccountActivity records and enhances them with customer/address data
+   * This is completely separate from core transaction analysis and can fail without affecting core functionality
+   */
+  async enhanceAccountsWithAddressMapping(accounts: AccountActivity[]): Promise<AccountActivity[]> {
+    console.log(`🔄 Phase 2: Enhancing ${accounts.length} accounts with address mapping...`);
+    
+    // Load address mappings
+    if (!this.addressMappingService.isLoaded()) {
+      try {
+        await this.addressMappingService.loadMappings();
+        const stats = this.addressMappingService.getStats();
+        console.log(`✅ Address mappings loaded: ${stats.totalMappings} addresses mapped to ${stats.totalCompanies} companies`);
+      } catch (error) {
+        console.warn(`⚠️ Failed to load address mappings - continuing without enhancement:`, error);
+        return accounts; // Return original accounts unchanged
+      }
+    }
+
+    const enhancedAccounts: AccountActivity[] = [];
+    let customerApiFailures = 0;
+    const MAX_FAILURES = 25; // Allow more failures since this is optional
+    let enhancementEnabled = true;
+
+    for (let i = 0; i < accounts.length; i++) {
+      const account = { ...accounts[i] }; // Copy original account
+      
+      // Progress logging
+      if (i % 100 === 0 || i < 10) {
+        console.log(`Enhancing account ${i + 1}/${accounts.length} (${enhancementEnabled ? 'enabled' : 'disabled after failures'})`);
+      }
+
+      // Optional enhancement - only if still enabled
+      if (enhancementEnabled && customerApiFailures < MAX_FAILURES) {
+        try {
+          // Add throttling to be respectful of API limits
+          if (i > 0 && i % 50 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay every 50 accounts
+          }
+
+          const customer = await this.getCustomer(account.customerId);
+          if (customer?.attributes) {
+            // Enhance with real customer name
+            const fullName = customer.attributes.fullName;
+            account.customerName = `${fullName.first} ${fullName.last}`.trim();
+            account.customerEmail = customer.attributes.email;
+            
+            // Format and map customer address to company
+            account.customerAddress = this.formatCustomerAddress(customer);
+            if (account.customerAddress) {
+              account.companyName = this.addressMappingService.getCompanyName(account.customerAddress) || undefined;
+              account.companyId = this.addressMappingService.getCompanyId(account.customerAddress) || undefined;
+              
+              // Log successful mapping for first few
+              if (i < 5 && account.companyName) {
+                console.log(`✅ Address mapped: "${account.customerAddress}" → ${account.companyName}`);
+              }
+            }
+          }
+        } catch (error) {
+          customerApiFailures++;
+          console.warn(`Customer API error for account ${account.accountId} (failure ${customerApiFailures}/${MAX_FAILURES}):`, error instanceof Error ? error.message : error);
+          
+          if (customerApiFailures >= MAX_FAILURES) {
+            enhancementEnabled = false;
+            console.warn(`⚠️ Disabling address mapping after ${customerApiFailures} failures - core data preserved`);
+          }
+          // Continue with original account data - no enhancement
+        }
+      }
+
+      enhancedAccounts.push(account);
+    }
+
+    // Report enhancement results
+    const accountsWithCompanyMapping = enhancedAccounts.filter(acc => acc.companyName && acc.companyName !== 'Unknown').length;
+    const mappingSuccessRate = enhancedAccounts.length > 0 ? Math.round((accountsWithCompanyMapping / enhancedAccounts.length) * 100) : 0;
+    
+    console.log(`📊 Address mapping results: ${accountsWithCompanyMapping}/${enhancedAccounts.length} accounts mapped to companies (${mappingSuccessRate}% success rate)`);
+    console.log(`📊 Customer API status: ${enhancementEnabled ? 'Healthy' : 'Disabled'} (${customerApiFailures} failures)`);
+    
+    if (!enhancementEnabled) {
+      console.log(`ℹ️  Address mapping was disabled due to API issues, but all core account data preserved`);
+    }
+
+    return enhancedAccounts;
+  }
+
   async getDormantAccounts(): Promise<{
     communicationNeeded: AccountActivity[];
     closureNeeded: AccountActivity[];
   }> {
-    const allAccounts = await this.getAllAccountsWithActivity();
+    // PHASE 1: Core transaction analysis (working perfectly - don't touch!)
+    console.log(`🔄 Phase 1: Core transaction analysis...`);
+    const coreAccounts = await this.getAllAccountsWithActivity();
+    
+    // PHASE 2: Optional address mapping enhancement (completely separate)
+    const allAccounts = await this.enhanceAccountsWithAddressMapping(coreAccounts);
 
     const communicationNeeded: AccountActivity[] = [];
     const closureNeeded: AccountActivity[] = [];

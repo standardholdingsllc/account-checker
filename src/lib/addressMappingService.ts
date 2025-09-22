@@ -134,22 +134,6 @@ export class AddressMappingService {
   }
 
   /**
-   * Get all available company names (for analytics)
-   */
-  getAllCompanyNames(): string[] {
-    if (!this.mappings) {
-      return [];
-    }
-
-    const companies = new Set<string>();
-    Object.values(this.mappings).forEach(mapping => {
-      companies.add(mapping['Company Name']);
-    });
-
-    return Array.from(companies).sort();
-  }
-
-  /**
    * Check if mappings are loaded
    */
   isLoaded(): boolean {

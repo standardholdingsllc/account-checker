@@ -102,6 +102,9 @@ export interface AccountActivity {
   customerId: string;
   customerName: string;
   customerEmail?: string;
+  customerAddress?: string;
+  companyName?: string;
+  companyId?: number | string;
   accountCreated: Date;
   lastActivity?: Date;
   hasActivity: boolean;
