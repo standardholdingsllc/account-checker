@@ -199,10 +199,12 @@ export class UnitApiClient {
 
   private formatCustomerAddress(customer: UnitCustomer | null): string | undefined {
     if (!customer?.attributes?.address) {
+      console.log(`🔍 formatCustomerAddress: No address data in customer`);
       return undefined;
     }
 
     const addr = customer.attributes.address;
+    console.log(`🔍 formatCustomerAddress: Raw address data:`, JSON.stringify(addr, null, 2));
     
     // Format address to match the JSON mapping style (street address only, like "548 Pleasant Mill Rd")
     // Your JSON has addresses like: "1000 Shelton Rd NW", "548 Pleasant Mill Rd", "6017 N US Hwy 19E"
@@ -212,6 +214,7 @@ export class UnitApiClient {
     ].filter(Boolean);
     
     const streetAddress = streetParts.length > 0 ? streetParts.join(' ') : undefined;
+    console.log(`🔍 formatCustomerAddress: Extracted street address: "${streetAddress}"`);
     
     // Also create a full address for fallback matching
     const fullParts = [
@@ -223,9 +226,12 @@ export class UnitApiClient {
     ].filter(Boolean);
     
     const fullAddress = fullParts.length > 0 ? fullParts.join(' ') : undefined;
+    console.log(`🔍 formatCustomerAddress: Full address: "${fullAddress}"`);
     
     // Return street address first (matches JSON format better), fallback to full address
-    return streetAddress || fullAddress;
+    const result = streetAddress || fullAddress;
+    console.log(`🔍 formatCustomerAddress: Final result: "${result}"`);
+    return result;
   }
 
   async getAllAccountsWithActivity(): Promise<AccountActivity[]> {

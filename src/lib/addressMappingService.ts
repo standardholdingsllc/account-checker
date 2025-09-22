@@ -28,7 +28,12 @@ export class AddressMappingService {
       });
       
       this.mappings = response.data;
-      console.log(`✅ Successfully loaded ${Object.keys(this.mappings!).length} address mappings`);
+      const mappingCount = Object.keys(this.mappings!).length;
+      console.log(`✅ Successfully loaded ${mappingCount} address mappings`);
+      
+      // Show first few mappings for debugging
+      const firstFewMappings = Object.entries(this.mappings).slice(0, 5);
+      console.log(`🔍 Sample mappings:`, firstFewMappings.map(([addr, mapping]) => `"${addr}" -> "${mapping['Company Name']}"`).join(', '));
     } catch (error) {
       console.error('❌ Failed to load address mappings:', error);
       // Initialize with empty mappings to prevent crashes
@@ -74,58 +79,57 @@ export class AddressMappingService {
 
   /**
    * Find company name for a given address
-   * Uses fuzzy matching to handle address variations
+   * Direct exact string matching - no normalization since JSON is structured exactly as needed
    */
   getCompanyName(customerAddress: string): string | null {
     if (!this.mappings || !customerAddress) {
+      console.log(`🔍 getCompanyName: mappings=${!!this.mappings}, customerAddress="${customerAddress}"`);
       return null;
     }
 
-    const normalizedInput = this.normalizeAddress(customerAddress);
+    console.log(`🔍 Attempting to map address (NO normalization): "${customerAddress}"`);
     
-    // Strategy 1: Try exact match (case-insensitive)
+    // Strategy 1: Try exact match (case-sensitive)
+    if (this.mappings[customerAddress]) {
+      const companyName = this.mappings[customerAddress]['Company Name'];
+      console.log(`✅ EXACT MATCH FOUND: "${customerAddress}" -> "${companyName}"`);
+      return companyName;
+    }
+
+    // Strategy 2: Try case-insensitive exact match
     for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
-      if (this.normalizeAddress(mappedAddress) === normalizedInput) {
+      if (mappedAddress.toLowerCase() === customerAddress.toLowerCase()) {
+        console.log(`✅ CASE-INSENSITIVE MATCH FOUND: "${customerAddress}" -> "${mappedAddress}" -> "${mapping['Company Name']}"`);
         return mapping['Company Name'];
+      }
+      // Show first few comparisons for debugging
+      if (Object.keys(this.mappings).indexOf(mappedAddress) < 5) {
+        console.log(`🔍 Comparing: "${customerAddress}" vs "${mappedAddress}"`);
       }
     }
 
-    // Strategy 2: Extract street address from full address and try exact match
-    // Customer might have "548 Pleasant Mill Rd Charlotte NC 28203" but mapping has "548 Pleasant Mill Rd"
+    // Strategy 3: Extract street address from full address and try exact match
     const streetOnlyAddress = this.extractStreetAddress(customerAddress);
+    console.log(`🔍 Street extraction: "${customerAddress}" -> "${streetOnlyAddress}"`);
     if (streetOnlyAddress && streetOnlyAddress !== customerAddress) {
-      const normalizedStreetOnly = this.normalizeAddress(streetOnlyAddress);
-      for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
-        if (this.normalizeAddress(mappedAddress) === normalizedStreetOnly) {
-          return mapping['Company Name'];
-        }
+      // Try exact match with extracted street address
+      if (this.mappings[streetOnlyAddress]) {
+        const companyName = this.mappings[streetOnlyAddress]['Company Name'];
+        console.log(`✅ STREET EXACT MATCH FOUND: "${streetOnlyAddress}" -> "${companyName}"`);
+        return companyName;
       }
-    }
-
-    // Strategy 3: Try partial matches - check if customer address starts with mapped address
-    for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
-      const normalizedMapped = this.normalizeAddress(mappedAddress);
-      if (normalizedInput.startsWith(normalizedMapped) || normalizedMapped.startsWith(normalizedInput)) {
-        return mapping['Company Name'];
-      }
-    }
-
-    // Strategy 4: Try address component matching (street number + street name)
-    const addressParts = normalizedInput.split(' ');
-    if (addressParts.length >= 2) {
-      const streetInfo = addressParts.slice(0, 3).join(' '); // First 3 parts usually contain street info
       
+      // Try case-insensitive match with extracted street address
       for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
-        const normalizedMapped = this.normalizeAddress(mappedAddress);
-        const mappedParts = normalizedMapped.split(' ');
-        const mappedStreetInfo = mappedParts.slice(0, 3).join(' ');
-        
-        if (streetInfo === mappedStreetInfo) {
+        if (mappedAddress.toLowerCase() === streetOnlyAddress.toLowerCase()) {
+          console.log(`✅ STREET CASE-INSENSITIVE MATCH: "${streetOnlyAddress}" -> "${mappedAddress}" -> "${mapping['Company Name']}"`);
           return mapping['Company Name'];
         }
       }
     }
 
+    console.log(`❌ NO MATCH FOUND for address: "${customerAddress}"`);
+    console.log(`🔍 Total mappings searched: ${Object.keys(this.mappings).length}`);
     return null; // No match found
   }
 
@@ -182,18 +186,36 @@ export class AddressMappingService {
   }
 
   /**
-   * Get company ID for a given address
+   * Get company ID for a given address - no normalization, exact matching
    */
   getCompanyId(customerAddress: string): number | string | null {
     if (!this.mappings || !customerAddress) {
       return null;
     }
 
-    const normalizedInput = this.normalizeAddress(customerAddress);
-    
+    // Try exact match
+    if (this.mappings[customerAddress]) {
+      return this.mappings[customerAddress].Company;
+    }
+
+    // Try case-insensitive match
     for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
-      if (this.normalizeAddress(mappedAddress) === normalizedInput) {
+      if (mappedAddress.toLowerCase() === customerAddress.toLowerCase()) {
         return mapping.Company;
+      }
+    }
+
+    // Try with extracted street address
+    const streetOnlyAddress = this.extractStreetAddress(customerAddress);
+    if (streetOnlyAddress && streetOnlyAddress !== customerAddress) {
+      if (this.mappings[streetOnlyAddress]) {
+        return this.mappings[streetOnlyAddress].Company;
+      }
+      
+      for (const [mappedAddress, mapping] of Object.entries(this.mappings)) {
+        if (mappedAddress.toLowerCase() === streetOnlyAddress.toLowerCase()) {
+          return mapping.Company;
+        }
       }
     }
 
