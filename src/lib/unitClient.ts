@@ -166,76 +166,6 @@ export class UnitApiClient {
     }
   }
 
-  async getCustomer(customerId: string): Promise<UnitCustomer | null> {
-    try {
-      // Use shorter timeout for customer calls to fail fast and preserve core functionality
-      const response: AxiosResponse<UnitApiResponse<UnitCustomer>> = await this.client.get(
-        `/customers/${customerId}`,
-        { timeout: 5000 } // 5 second timeout (shorter than default 30s)
-      );
-      return response.data.data;
-    } catch (error) {
-      if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as { response?: { status?: number, data?: any } };
-        if (axiosError.response?.status === 404) {
-          // 404 is normal - customer not found, don't log as error
-          return null;
-        } else if (axiosError.response?.status === 403) {
-          // 403 is permissions issue - don't log as error since it's expected sometimes
-          return null;
-        } else if (axiosError.response?.status === 429) {
-          // Rate limit hit - throw error to trigger circuit breaker
-          throw new Error(`Customer API rate limit exceeded for ${customerId}`);
-        } else {
-          // Other errors - throw to trigger circuit breaker
-          throw new Error(`Customer API ${axiosError.response?.status} error for ${customerId}`);
-        }
-      } else if (error && typeof error === 'object' && 'code' in error && error.code === 'ECONNABORTED') {
-        // Timeout - throw to trigger circuit breaker
-        throw new Error(`Customer API timeout for ${customerId}`);
-      } else {
-        // Unknown error - throw to trigger circuit breaker  
-        throw new Error(`Unexpected customer API error for ${customerId}`);
-      }
-    }
-  }
-
-  private formatCustomerAddress(customer: UnitCustomer | null): string | undefined {
-    if (!customer?.attributes?.address) {
-      console.log(`🔍 formatCustomerAddress: No address data in customer`);
-      return undefined;
-    }
-
-    const addr = customer.attributes.address;
-    console.log(`🔍 formatCustomerAddress: Raw address data:`, JSON.stringify(addr, null, 2));
-    
-    // Format address to match the JSON mapping style (street address only, like "548 Pleasant Mill Rd")
-    // Your JSON has addresses like: "1000 Shelton Rd NW", "548 Pleasant Mill Rd", "6017 N US Hwy 19E"
-    const streetParts = [
-      addr.street,
-      addr.street2
-    ].filter(Boolean);
-    
-    const streetAddress = streetParts.length > 0 ? streetParts.join(' ') : undefined;
-    console.log(`🔍 formatCustomerAddress: Extracted street address: "${streetAddress}"`);
-    
-    // Also create a full address for fallback matching
-    const fullParts = [
-      addr.street,
-      addr.street2,
-      addr.city,
-      addr.state,
-      addr.postalCode
-    ].filter(Boolean);
-    
-    const fullAddress = fullParts.length > 0 ? fullParts.join(' ') : undefined;
-    console.log(`🔍 formatCustomerAddress: Full address: "${fullAddress}"`);
-    
-    // Return street address first (matches JSON format better), fallback to full address
-    const result = streetAddress || fullAddress;
-    console.log(`🔍 formatCustomerAddress: Final result: "${result}"`);
-    return result;
-  }
 
   async getAllAccountsWithActivity(): Promise<AccountActivity[]> {
     const accounts = await this.getAccounts();
@@ -315,91 +245,54 @@ export class UnitApiClient {
    * This is completely separate from core transaction analysis and can fail without affecting core functionality
    */
   async enhanceAccountsWithAddressMapping(accounts: AccountActivity[]): Promise<AccountActivity[]> {
-    console.log(`🚀 PHASE 2 STARTED: Enhancing ${accounts.length} accounts with address mapping...`);
+    console.log(`🚀 PHASE 2 STARTED: Enhancing ${accounts.length} accounts with customer-company mapping...`);
     
     if (accounts.length === 0) {
       console.log(`⚠️ No accounts to enhance - returning empty array`);
       return accounts;
     }
     
-    // Load address mappings
+    // Load customer-company mappings
     if (!this.addressMappingService.isLoaded()) {
       try {
         await this.addressMappingService.loadMappings();
         const stats = this.addressMappingService.getStats();
-        console.log(`✅ Address mappings loaded: ${stats.totalMappings} addresses mapped to ${stats.totalCompanies} companies`);
+        console.log(`✅ Customer-company mappings loaded: ${stats.totalMappings} customers mapped to ${stats.totalCompanies} companies`);
       } catch (error) {
-        console.warn(`⚠️ Failed to load address mappings - continuing without enhancement:`, error);
+        console.warn(`⚠️ Failed to load customer-company mappings - continuing without enhancement:`, error);
         return accounts; // Return original accounts unchanged
       }
     }
 
     const enhancedAccounts: AccountActivity[] = [];
-    let customerApiFailures = 0;
-    const MAX_FAILURES = 25; // Allow more failures since this is optional
-    let enhancementEnabled = true;
+    let successfulMappings = 0;
+
+    console.log(`🔄 Processing ${accounts.length} accounts for company mapping (no API calls needed)...`);
 
     for (let i = 0; i < accounts.length; i++) {
       const account = { ...accounts[i] }; // Copy original account
       
-      // Progress logging
-      if (i % 100 === 0 || i < 10) {
-        console.log(`Enhancing account ${i + 1}/${accounts.length} (${enhancementEnabled ? 'enabled' : 'disabled after failures'})`);
+      // Progress logging every 1000 accounts
+      if (i % 1000 === 0) {
+        console.log(`🔄 Mapping progress: ${i + 1}/${accounts.length} accounts processed`);
       }
 
-      // Optional enhancement - only if still enabled
-      if (enhancementEnabled && customerApiFailures < MAX_FAILURES) {
-        try {
-          // Add throttling to be respectful of API limits
-          if (i > 0 && i % 50 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay every 50 accounts
-          }
-
-          const customer = await this.getCustomer(account.customerId);
-          if (customer?.attributes) {
-            // Enhance with real customer name
-            const fullName = customer.attributes.fullName;
-            account.customerName = `${fullName.first} ${fullName.last}`.trim();
-            account.customerEmail = customer.attributes.email;
-            
-            // Format and map customer address to company
-            account.customerAddress = this.formatCustomerAddress(customer);
-            if (account.customerAddress) {
-              account.companyName = this.addressMappingService.getCompanyName(account.customerAddress) || undefined;
-              account.companyId = this.addressMappingService.getCompanyId(account.customerAddress) || undefined;
-              
-              // Enhanced debugging for first 10 addresses to understand why mapping fails
-              if (i < 10) {
-                console.log(`🔍 Debug mapping attempt ${i + 1}:`);
-                console.log(`  Raw address: "${account.customerAddress}"`);
-                console.log(`  Mapped company: ${account.companyName || 'NO MATCH'}`);
-                
-                if (!account.companyName) {
-                  // Show some sample addresses from mapping for comparison
-                  const stats = this.addressMappingService.getStats();
-                  console.log(`  Sample mapping addresses: ${stats.sampleAddresses.slice(0, 3).join(', ')}`);
-                }
-              }
-              
-              // Log successful mapping
-              if (account.companyName) {
-                console.log(`✅ Address mapped: "${account.customerAddress}" → ${account.companyName}`);
-              }
-            } else {
-              if (i < 10) {
-                console.log(`🔍 Debug: Account ${account.accountId} has no address in customer data`);
-              }
-            }
-          }
-        } catch (error) {
-          customerApiFailures++;
-          console.warn(`Customer API error for account ${account.accountId} (failure ${customerApiFailures}/${MAX_FAILURES}):`, error instanceof Error ? error.message : error);
-          
-          if (customerApiFailures >= MAX_FAILURES) {
-            enhancementEnabled = false;
-            console.warn(`⚠️ Disabling address mapping after ${customerApiFailures} failures - core data preserved`);
-          }
-          // Continue with original account data - no enhancement
+      // Direct customer ID lookup - super fast, no API calls needed!
+      account.companyName = this.addressMappingService.getCompanyName(account.customerId) || undefined;
+      account.companyId = this.addressMappingService.getCompanyId(account.customerId) || undefined;
+      
+      // Enhanced debugging for first 10 mappings
+      if (i < 10) {
+        console.log(`🔍 Debug mapping ${i + 1}: Customer ${account.customerId} -> ${account.companyName || 'NO MATCH'}`);
+      }
+      
+      // Count successful mappings
+      if (account.companyName) {
+        successfulMappings++;
+        
+        // Log first few successful mappings for verification
+        if (successfulMappings <= 5) {
+          console.log(`✅ Customer mapped: ${account.customerId} → ${account.companyName}`);
         }
       }
 
@@ -407,15 +300,10 @@ export class UnitApiClient {
     }
 
     // Report enhancement results
-    const accountsWithCompanyMapping = enhancedAccounts.filter(acc => acc.companyName && acc.companyName !== 'Unknown').length;
-    const mappingSuccessRate = enhancedAccounts.length > 0 ? Math.round((accountsWithCompanyMapping / enhancedAccounts.length) * 100) : 0;
+    const mappingSuccessRate = enhancedAccounts.length > 0 ? Math.round((successfulMappings / enhancedAccounts.length) * 100) : 0;
     
-    console.log(`📊 Address mapping results: ${accountsWithCompanyMapping}/${enhancedAccounts.length} accounts mapped to companies (${mappingSuccessRate}% success rate)`);
-    console.log(`📊 Customer API status: ${enhancementEnabled ? 'Healthy' : 'Disabled'} (${customerApiFailures} failures)`);
-    
-    if (!enhancementEnabled) {
-      console.log(`ℹ️  Address mapping was disabled due to API issues, but all core account data preserved`);
-    }
+    console.log(`📊 Customer-company mapping results: ${successfulMappings}/${enhancedAccounts.length} accounts mapped to companies (${mappingSuccessRate}% success rate)`);
+    console.log(`📊 Phase 2 performance: ✅ FAST - No API calls needed, direct JSON lookups only`);
 
     return enhancedAccounts;
   }

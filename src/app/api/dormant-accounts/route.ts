@@ -119,7 +119,6 @@ export async function GET(request: NextRequest) {
       customerId: account.customerId,
       customerName: account.customerName,
       customerEmail: account.customerEmail || '',
-      customerAddress: account.customerAddress || '',
       companyName: account.companyName || 'Unknown',
       balance: account.balance,
       balanceFormatted: new Intl.NumberFormat('en-US', {
@@ -142,23 +141,22 @@ export async function GET(request: NextRequest) {
     
     if (format === 'csv') {
       // Generate CSV content
-      const csvHeaders = [
-        'Priority',
-        'Account ID',
-        'Customer ID', 
-        'Customer Name',
-        'Customer Email',
-        'Customer Address',
-        'Company Name',
-        'Balance (USD)',
-        'Has Activity',
-        'Days Since Creation',
-        'Created Date',
-        'Last Activity Date',
-        'Days Since Last Activity',
-        'Status',
-        'Closure Reason'
-      ].join(',');
+        const csvHeaders = [
+          'Priority',
+          'Account ID',
+          'Customer ID',
+          'Customer Name',
+          'Customer Email',
+          'Company Name',
+          'Balance (USD)',
+          'Has Activity',
+          'Days Since Creation',
+          'Created Date',
+          'Last Activity Date',
+          'Days Since Last Activity',
+          'Status',
+          'Closure Reason'
+        ].join(',');
 
       const csvRows = accountList.map(account => [
         account.priority,
@@ -166,7 +164,6 @@ export async function GET(request: NextRequest) {
         account.customerId,
         `"${account.customerName}"`, // Quote customer names in case of commas
         `"${account.customerEmail}"`,
-        `"${account.customerAddress}"`,
         `"${account.companyName}"`,
         account.balanceFormatted.replace('$', '').replace(',', ''), // Remove formatting for CSV
         account.hasActivity ? 'Yes' : 'No',
